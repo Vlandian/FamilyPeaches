@@ -1,0 +1,26 @@
+﻿*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+body{margin:0;background:#f7f7f7;color:#222}
+header{background:#2c3e50;color:#fff;padding:12px 20px}
+main{display:flex;gap:12px;padding:12px}
+.panel{width:320px;background:#fff;padding:12px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.panel label{display:block;margin:8px 0}
+.panel input, .panel select{width:100%;padding:6px;margin-top:4px}
+.panel .buttons{display:flex;gap:8px;margin-top:8px}
+#canvas{ }
+.canvas{flex:1;background:#fff;border-radius:6px;padding:12px;overflow:hidden;position:relative;min-height:500px}
+#svgCanvas{position:absolute;left:12px;top:12px;right:12px;bottom:12px;width:calc(100% - 24px);height:calc(100% - 24px);z-index:0}
+.personNode{fill:#ecf0f1;stroke:#34495e;stroke-width:1.5}
+.personText{font-size:12px;pointer-events:none}
+.link{stroke:#7f8c8d;stroke-width:2;fill:none}
+.marriage{stroke:#c0392b;stroke-width:2}
+.peopleItem{padding:6px;border-bottom:1px solid #eee;display:flex;justify-content:space-between}
+.peopleItem button{margin-left:6px}
+
+/* Card layout */
+.cardsContainer-placeholder{ }
+#cardsContainer{position:absolute;left:12px;top:12px;right:12px;bottom:12px;width:calc(100% - 24px);height:calc(100% - 24px);z-index:1}
+.card{position:absolute;width:180px;background:#fff;border:1px solid #ccc;border-radius:8px;padding:8px;box-shadow:0 2px 6px rgba(0,0,0,.1);cursor:move}
+.card h3{margin:0 0 6px 0;font-size:14px}
+.card p{margin:2px 0;font-size:12px}
+.card .cardActions{display:flex;gap:6px;margin-top:6px}
+.card .smallBtn{padding:4px 6px;font-size:12px}

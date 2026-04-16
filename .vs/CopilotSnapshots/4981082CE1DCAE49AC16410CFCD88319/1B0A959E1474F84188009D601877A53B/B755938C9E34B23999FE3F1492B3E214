@@ -1,0 +1,222 @@
+﻿// Simple family tree app (no backend) - stores data in localStorage
+const STORAGE_KEY = 'familyTree_v1'
+let data = { people: [] }
+
+// DOM
+const form = document.getElementById('personForm')
+const peopleList = document.getElementById('peopleList')
+const svg = document.getElementById('svgCanvas')
+const cardsContainer = document.getElementById('cardsContainer')
+const parentsSelect = document.getElementById('parents')
+const spouseSelect = document.getElementById('spouse')
+const resetBtn = document.getElementById('resetBtn')
+
+function load(){
+  try{ data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {people:[]}}catch(e){data={people:[]}}
+}
+
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)) }
+
+function uid(){ return Math.random().toString(36).slice(2,9) }
+
+function renderList(){
+  peopleList.innerHTML = ''
+  data.people.forEach(p=>{
+    const li = document.createElement('li')
+    li.className = 'peopleItem'
+    const title = document.createElement('div')
+    title.textContent = `${p.firstName} ${p.lastName || ''} (${p.age||''})`
+    const actions = document.createElement('div')
+    const edit = document.createElement('button')
+    edit.textContent = 'Изменить'
+    edit.onclick = ()=> loadToForm(p.id)
+    const del = document.createElement('button')
+    del.textContent = 'Удалить'
+    del.onclick = ()=>{ if(confirm('Удалить персонажа?')){ deletePerson(p.id) } }
+    actions.appendChild(edit); actions.appendChild(del)
+    li.appendChild(title); li.appendChild(actions)
+    peopleList.appendChild(li)
+  })
+  refreshSelects()
+}
+
+function refreshSelects(){
+  parentsSelect.innerHTML = ''
+  spouseSelect.innerHTML = '<option value="">-- нет --</option>'
+  data.people.forEach(p=>{
+    const opt = document.createElement('option')
+    opt.value = p.id
+    opt.textContent = `${p.firstName} ${p.lastName||''}`
+    parentsSelect.appendChild(opt)
+    const opt2 = opt.cloneNode(true)
+    spouseSelect.appendChild(opt2)
+  })
+}
+
+function loadToForm(id){
+  const p = data.people.find(x=>x.id===id)
+  if(!p) return
+  form.personId.value = p.id
+  form.firstName.value = p.firstName
+  form.lastName.value = p.lastName
+  form.age.value = p.age
+  Array.from(parentsSelect.options).forEach(o=> o.selected = p.parents && p.parents.includes(o.value))
+  spouseSelect.value = p.spouse || ''
+}
+
+form.addEventListener('submit', e=>{
+  e.preventDefault()
+  const id = form.personId.value || uid()
+  const person = {
+    id,
+    firstName: form.firstName.value.trim(),
+    lastName: form.lastName.value.trim(),
+    age: form.age.value ? Number(form.age.value) : null,
+    parents: Array.from(parentsSelect.selectedOptions).map(o=>o.value),
+    spouse: spouseSelect.value || null
+  }
+  const existing = data.people.find(p=>p.id===id)
+  if(existing){
+    Object.assign(existing, person)
+  }else{
+    data.people.push(person)
+  }
+  // ensure parents have this child? we'll store only parents in child node; spouse stored on child; keep simple
+  save();
+  renderAll()
+  form.reset()
+  form.personId.value = ''
+})
+
+resetBtn.addEventListener('click', ()=>{ form.reset(); form.personId.value = '' })
+
+function deletePerson(id){
+  data.people = data.people.filter(p=>p.id!==id)
+  // remove references
+  data.people.forEach(p=>{
+    if(p.spouse===id) p.spouse = null
+    if(p.parents) p.parents = p.parents.filter(x=>x!==id)
+  })
+  save(); renderAll()
+}
+
+function buildRelationships(){
+  const map = new Map(data.people.map(p=>[p.id, p]))
+  // children list
+  data.people.forEach(p=> p.children = [])
+  data.people.forEach(p=>{
+    (p.parents||[]).forEach(pid=>{
+      const par = map.get(pid)
+      if(par) par.children.push(p.id)
+    })
+  })
+}
+
+function renderGraph(){
+  // Render draggable HTML cards and draw SVG lines between them
+  svg.innerHTML = ''
+  cardsContainer.innerHTML = ''
+  if(data.people.length===0) return
+  buildRelationships()
+
+  // ensure every person has position (persisted in person.pos)
+  const containerRect = cardsContainer.getBoundingClientRect()
+  data.people.forEach((p,i)=>{
+    if(!p.pos) p.pos = { x: 20 + (i%4)*220, y: 20 + Math.floor(i/4)*160 }
+  })
+
+  // helper to draw a line element
+  function drawLine(x1,y1,x2,y2,cls){
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line')
+    line.setAttribute('x1', x1)
+    line.setAttribute('y1', y1)
+    line.setAttribute('x2', x2)
+    line.setAttribute('y2', y2)
+    line.classList.add('link')
+    if(cls) line.classList.add(cls)
+    svg.appendChild(line)
+  }
+
+  // draw parent->child and marriage lines based on card centers
+  const personById = new Map(data.people.map(p=>[p.id,p]))
+  // create cards first
+  data.people.forEach(p=>{
+    const c = document.createElement('div')
+    c.className = 'card'
+    c.style.left = p.pos.x + 'px'
+    c.style.top = p.pos.y + 'px'
+    c.dataset.id = p.id
+    c.innerHTML = `<h3>${escapeHtml(p.firstName)} ${escapeHtml(p.lastName||'')}</h3>
+      <p>Возраст: ${p.age||''}</p>
+      <div class="cardActions">
+        <button class="smallBtn" data-action="edit">Редактировать</button>
+        <button class="smallBtn" data-action="delete">Удалить</button>
+      </div>`
+    cardsContainer.appendChild(c)
+
+    c.querySelector('[data-action="edit"]').addEventListener('click', ()=> loadToForm(p.id))
+    c.querySelector('[data-action="delete"]').addEventListener('click', ()=>{ if(confirm('Удалить персонажа?')) deletePerson(p.id) })
+
+    // drag
+    let isDown=false, startX=0, startY=0, origX=0, origY=0
+    c.addEventListener('mousedown', (ev)=>{
+      isDown=true
+      startX = ev.clientX; startY = ev.clientY
+      origX = p.pos.x; origY = p.pos.y
+      c.style.cursor = 'grabbing'
+      ev.preventDefault()
+    })
+    window.addEventListener('mousemove', (ev)=>{
+      if(!isDown) return
+      const dx = ev.clientX - startX
+      const dy = ev.clientY - startY
+      p.pos.x = Math.max(0, origX + dx)
+      p.pos.y = Math.max(0, origY + dy)
+      c.style.left = p.pos.x + 'px'
+      c.style.top = p.pos.y + 'px'
+      redrawLines()
+    })
+    window.addEventListener('mouseup', ()=>{
+      if(isDown){ isDown=false; c.style.cursor='move'; save(); }
+    })
+  })
+
+  function getCenter(id){
+    const p = personById.get(id) || data.people.find(x=>x.id===id)
+    if(!p || !p.pos) return null
+    return { x: p.pos.x + 90, y: p.pos.y + 24 }
+  }
+
+  function redrawLines(){
+    svg.innerHTML = ''
+    // marriages (draw once)
+    data.people.forEach(p=>{
+      if(p.spouse && p.id < p.spouse){
+        const a = getCenter(p.id), b = getCenter(p.spouse)
+        if(a && b) drawLine(a.x,a.y,b.x,b.y,'marriage')
+      }
+    })
+    // parent -> child
+    data.people.forEach(p=>{
+      (p.parents||[]).forEach(pid=>{
+        const a = getCenter(pid), b = getCenter(p.id)
+        if(a && b) drawLine(a.x, a.y+20, b.x, b.y-20)
+      })
+    })
+  }
+
+  // initial draw
+  redrawLines()
+}
+
+function renderAll(){ renderList(); renderGraph() }
+
+load(); renderAll()
+
+// sample data for first run
+if(data.people.length===0){
+  data.people.push({id:uid(), firstName:'Иван', lastName:'Иванов', age:60, parents:[], spouse:null})
+  data.people.push({id:uid(), firstName:'Мария', lastName:'Иванова', age:58, parents:[], spouse:null})
+  data.people.push({id:uid(), firstName:'Ольга', lastName:'Иванова', age:30, parents:[], spouse:null})
+  save(); load(); renderAll()
+}

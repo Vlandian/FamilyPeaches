@@ -1,0 +1,221 @@
+﻿// Simple family tree app (no backend) - stores data in localStorage
+const STORAGE_KEY = 'familyTree_v1'
+let data = { people: [] }
+
+// DOM
+const form = document.getElementById('personForm')
+const peopleList = document.getElementById('peopleList')
+const svg = document.getElementById('svgCanvas')
+const parentsSelect = document.getElementById('parents')
+const spouseSelect = document.getElementById('spouse')
+const resetBtn = document.getElementById('resetBtn')
+
+function load(){
+  try{ data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {people:[]}}catch(e){data={people:[]}}
+}
+
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)) }
+
+function uid(){ return Math.random().toString(36).slice(2,9) }
+
+function renderList(){
+  peopleList.innerHTML = ''
+  data.people.forEach(p=>{
+    const li = document.createElement('li')
+    li.className = 'peopleItem'
+    const title = document.createElement('div')
+    title.textContent = `${p.firstName} ${p.lastName || ''} (${p.age||''})`
+    const actions = document.createElement('div')
+    const edit = document.createElement('button')
+    edit.textContent = 'Изменить'
+    edit.onclick = ()=> loadToForm(p.id)
+    const del = document.createElement('button')
+    del.textContent = 'Удалить'
+    del.onclick = ()=>{ if(confirm('Удалить персонажа?')){ deletePerson(p.id) } }
+    actions.appendChild(edit); actions.appendChild(del)
+    li.appendChild(title); li.appendChild(actions)
+    peopleList.appendChild(li)
+  })
+  refreshSelects()
+}
+
+function refreshSelects(){
+  parentsSelect.innerHTML = ''
+  spouseSelect.innerHTML = '<option value="">-- нет --</option>'
+  data.people.forEach(p=>{
+    const opt = document.createElement('option')
+    opt.value = p.id
+    opt.textContent = `${p.firstName} ${p.lastName||''}`
+    parentsSelect.appendChild(opt)
+    const opt2 = opt.cloneNode(true)
+    spouseSelect.appendChild(opt2)
+  })
+}
+
+function loadToForm(id){
+  const p = data.people.find(x=>x.id===id)
+  if(!p) return
+  form.personId.value = p.id
+  form.firstName.value = p.firstName
+  form.lastName.value = p.lastName
+  form.age.value = p.age
+  Array.from(parentsSelect.options).forEach(o=> o.selected = p.parents && p.parents.includes(o.value))
+  spouseSelect.value = p.spouse || ''
+}
+
+form.addEventListener('submit', e=>{
+  e.preventDefault()
+  const id = form.personId.value || uid()
+  const person = {
+    id,
+    firstName: form.firstName.value.trim(),
+    lastName: form.lastName.value.trim(),
+    age: form.age.value ? Number(form.age.value) : null,
+    parents: Array.from(parentsSelect.selectedOptions).map(o=>o.value),
+    spouse: spouseSelect.value || null
+  }
+  const existing = data.people.find(p=>p.id===id)
+  if(existing){
+    Object.assign(existing, person)
+  }else{
+    data.people.push(person)
+  }
+  // ensure parents have this child? we'll store only parents in child node; spouse stored on child; keep simple
+  save();
+  renderAll()
+  form.reset()
+  form.personId.value = ''
+})
+
+resetBtn.addEventListener('click', ()=>{ form.reset(); form.personId.value = '' })
+
+function deletePerson(id){
+  data.people = data.people.filter(p=>p.id!==id)
+  // remove references
+  data.people.forEach(p=>{
+    if(p.spouse===id) p.spouse = null
+    if(p.parents) p.parents = p.parents.filter(x=>x!==id)
+  })
+  save(); renderAll()
+}
+
+function buildRelationships(){
+  const map = new Map(data.people.map(p=>[p.id, p]))
+  // children list
+  data.people.forEach(p=> p.children = [])
+  data.people.forEach(p=>{
+    (p.parents||[]).forEach(pid=>{
+      const par = map.get(pid)
+      if(par) par.children.push(p.id)
+    })
+  })
+}
+
+function renderGraph(){
+  // very simple top-down layout by generation (BFS from roots)
+  svg.innerHTML = ''
+  if(data.people.length===0) return
+  buildRelationships()
+  const map = new Map(data.people.map(p=>[p.id, p]))
+
+  // find roots (no parents)
+  const roots = data.people.filter(p=>!(p.parents && p.parents.length))
+  // assign levels
+  const levels = []
+  const visited = new Set()
+  const q = []
+  roots.forEach(r=>{ q.push({id:r.id, level:0}); visited.add(r.id) })
+  while(q.length){
+    const cur = q.shift()
+    const level = cur.level
+    levels[level] = levels[level] || []
+    levels[level].push(cur.id)
+    const node = map.get(cur.id)
+    (node.children||[]).forEach(cid=>{ if(!visited.has(cid)){ visited.add(cid); q.push({id:cid, level:level+1}) } })
+  }
+  // nodes not reached (cycles) -> put on bottom
+  data.people.forEach(p=>{ if(!visited.has(p.id)){ const l = levels.length; levels[l]=levels[l]||[]; levels[l].push(p.id); visited.add(p.id) } })
+
+  const nodeW = 140, nodeH=48, gapX=20, gapY=80
+  const positions = new Map()
+  levels.forEach((ids, lvl)=>{
+    const totalW = ids.length*nodeW + (ids.length-1)*gapX
+    let startX = 20
+    ids.forEach((id, i)=>{
+      const x = startX + i*(nodeW+gapX)
+      const y = 20 + lvl*(nodeH+gapY)
+      positions.set(id, {x,y})
+    })
+  })
+
+  // draw marriage lines (between spouses)
+  data.people.forEach(p=>{
+    if(p.spouse && p.id < p.spouse){ // avoid duplicate - compare ids (string) lexicographically ok
+      const a = positions.get(p.id), b = positions.get(p.spouse)
+      if(a && b){
+        const line = document.createElementNS('http://www.w3.org/2000/svg','line')
+        line.setAttribute('x1', a.x + nodeW/2)
+        line.setAttribute('y1', a.y + nodeH/2)
+        line.setAttribute('x2', b.x + nodeW/2)
+        line.setAttribute('y2', b.y + nodeH/2)
+        line.classList.add('link','marriage')
+        svg.appendChild(line)
+      }
+    }
+  })
+
+  // draw parent->child lines
+  data.people.forEach(p=>{
+    (p.parents||[]).forEach(pid=>{
+      const a = positions.get(pid), b = positions.get(p.id)
+      if(a && b){
+        const path = document.createElementNS('http://www.w3.org/2000/svg','path')
+        const ax = a.x + nodeW/2, ay = a.y + nodeH
+        const bx = b.x + nodeW/2, by = b.y
+        const mx = (ax+bx)/2
+        const d = `M ${ax} ${ay} C ${ax} ${(ay+by)/2} ${bx} ${(ay+by)/2} ${bx} ${by}`
+        path.setAttribute('d', d)
+        path.classList.add('link')
+        svg.appendChild(path)
+      }
+    })
+  })
+
+  // draw nodes
+  data.people.forEach(p=>{
+    const pos = positions.get(p.id)
+    if(!pos) return
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g')
+    g.setAttribute('transform', `translate(${pos.x},${pos.y})`)
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
+    rect.setAttribute('width', nodeW)
+    rect.setAttribute('height', nodeH)
+    rect.setAttribute('rx',8)
+    rect.classList.add('personNode')
+    const text = document.createElementNS('http://www.w3.org/2000/svg','text')
+    text.setAttribute('x',10)
+    text.setAttribute('y',18)
+    text.classList.add('personText')
+    text.textContent = `${p.firstName} ${p.lastName||''}`
+    const text2 = document.createElementNS('http://www.w3.org/2000/svg','text')
+    text2.setAttribute('x',10)
+    text2.setAttribute('y',36)
+    text2.classList.add('personText')
+    text2.textContent = `Возраст: ${p.age||''}`
+    g.appendChild(rect); g.appendChild(text); g.appendChild(text2)
+    g.addEventListener('click', ()=> loadToForm(p.id))
+    svg.appendChild(g)
+  })
+}
+
+function renderAll(){ renderList(); renderGraph() }
+
+load(); renderAll()
+
+// sample data for first run
+if(data.people.length===0){
+  data.people.push({id:uid(), firstName:'Иван', lastName:'Иванов', age:60, parents:[], spouse:null})
+  data.people.push({id:uid(), firstName:'Мария', lastName:'Иванова', age:58, parents:[], spouse:null})
+  data.people.push({id:uid(), firstName:'Ольга', lastName:'Иванова', age:30, parents:[], spouse:null})
+  save(); load(); renderAll()
+}

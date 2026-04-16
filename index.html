@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Семейное древо</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <button type="button" id="panelToggle" class="panelToggle" aria-controls="sidePanel" aria-expanded="false">
+        Меню
+    </button>
+    <button type="button" id="dataToolsToggle" class="dataToolsToggle" aria-controls="dataToolsPanel" aria-expanded="false">
+        Данные
+    </button>
+
+    <section id="authPanel" class="authPanel">
+        <div class="authStatus">
+            <span id="remoteStatus">Локальный режим</span>
+            <button type="button" id="remoteLogoutBtn" hidden>Выйти</button>
+        </div>
+
+        <form id="remoteLoginForm" class="remoteLoginForm" hidden>
+            <label>
+                Email
+                <input id="remoteEmail" type="email" autocomplete="username">
+            </label>
+            <label>
+                Пароль
+                <input id="remotePassword" type="password" autocomplete="current-password">
+            </label>
+            <button type="submit">Войти</button>
+        </form>
+    </section>
+
+    <section id="dataToolsPanel" class="dataToolsPanel" aria-hidden="true">
+        <div class="dataToolsHeader">
+            <h2>Данные</h2>
+            <button type="button" id="dataToolsClose" aria-label="Закрыть меню данных">×</button>
+        </div>
+
+        <div class="dataToolsActions">
+            <button type="button" id="exportJsonBtn">Экспорт JSON</button>
+            <button type="button" id="importJsonBtn">Импорт JSON</button>
+            <button type="button" id="manualBackupBtn">Создать резерв</button>
+            <button type="button" id="resetTreeBtn" class="dangerBtn">Сбросить дерево</button>
+        </div>
+
+        <input id="importJsonFile" type="file" accept="application/json,.json" hidden>
+
+        <div class="dataToolsNote">
+            Экспорт сохраняет дерево в файл. Резервы лежат в этом браузере.
+        </div>
+
+        <h3>Резервные копии</h3>
+        <ul id="backupsList" class="backupsList"></ul>
+    </section>
+
+    <main>
+        <section id="sidePanel" class="panel" aria-hidden="true">
+            <div class="panelHeader">
+                <h1>Меню</h1>
+                <button type="button" id="panelClose" class="panelClose" aria-label="Закрыть меню">×</button>
+            </div>
+
+            <section class="housesPanel">
+                <h2>Дома</h2>
+                <input type="hidden" id="houseEditId">
+                <input type="hidden" id="removeHouseCrest" value="0">
+
+                <label>
+                    Название дома
+                    <input id="houseName" placeholder="например, Дом Риверн">
+                </label>
+
+                <label>
+                    Девиз
+                    <input id="houseMotto" placeholder="например, Долг превыше страха">
+                </label>
+
+                <label>
+                    Вотчина
+                    <input id="houseSeat" placeholder="например, Северная крепость">
+                </label>
+
+                <label>
+                    Описание дома
+                    <textarea id="houseDescription" rows="4" placeholder="История, особенности, традиции дома"></textarea>
+                </label>
+
+                <label>
+                    Герб по URL
+                    <input id="houseCrestUrl" type="url" placeholder="https://example.com/crest.png">
+                </label>
+
+                <label>
+                    Герб с компьютера
+                    <input id="houseCrestFile" type="file" accept="image/*">
+                </label>
+
+                <div class="houseFormActions">
+                    <button type="button" id="addHouseBtn">Создать дом</button>
+                    <button type="button" id="cancelHouseEditBtn" class="secondaryBtn" hidden>Отмена</button>
+                    <button type="button" id="removeHouseCrestBtn" class="secondaryBtn" hidden>Убрать герб</button>
+                </div>
+                <div id="houseMembers" class="houseMembers" hidden></div>
+                <ul id="housesList"></ul>
+            </section>
+
+            <h2>Список персонажей</h2>
+            <label>
+                Поиск
+                <input id="peopleSearch" type="search" placeholder="Имя, титул, дом">
+            </label>
+            <ul id="peopleList"></ul>
+        </section>
+
+        <section class="canvas">
+            <div id="treeSpace">
+                <div id="treeWorld">
+                    <svg id="svgCanvas"></svg>
+                    <div id="cardsContainer"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/core.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/people.js"></script>
+    <script src="js/relationships.js"></script>
+    <script src="js/houses.js"></script>
+    <script src="js/render.js"></script>
+    <script src="js/events.js"></script>
+    <script src="js/modals.js"></script>
+    <script src="js/backups.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/supabase-config.js"></script>
+    <script src="js/supabase-sync.js"></script>
+    <script src="js/bootstrap.js"></script>
+</body>
+</html>

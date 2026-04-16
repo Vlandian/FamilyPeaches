@@ -1,0 +1,15 @@
+﻿.link {
+    stroke: #7f8c8d;
+    stroke-width: 3;
+    fill: none;
+}
+
+.marriage {
+    stroke: #c0392b;
+    stroke-width: 4;
+}
+
+.parent-link {
+    stroke: #2980b9;
+    stroke-width: 3;
+}

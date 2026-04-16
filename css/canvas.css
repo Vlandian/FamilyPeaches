@@ -1,0 +1,43 @@
+﻿.canvas {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    border-radius: 0;
+    padding: 0;
+    overflow: auto;
+    height: 100vh;
+    min-height: 0;
+}
+
+#svgCanvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+}
+
+#cardsContainer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+#treeSpace {
+    position: relative;
+    width: 30000px;
+    height: 30000px;
+}
+
+#treeWorld {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 30000px;
+    height: 30000px;
+    transform-origin: 0 0;
+}

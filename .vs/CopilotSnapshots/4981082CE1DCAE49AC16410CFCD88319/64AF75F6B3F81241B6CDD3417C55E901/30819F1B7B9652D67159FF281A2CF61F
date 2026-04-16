@@ -1,0 +1,42 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Семейное древо</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Семейное древо</h1>
+  </header>
+  <main>
+    <section class="panel">
+      <form id="personForm">
+        <input type="hidden" id="personId">
+        <label>Имя <input id="firstName" required></label>
+        <label>Фамилия <input id="lastName"></label>
+        <label>Возраст <input id="age" type="number" min="0"></label>
+        <label>Родители (Ctrl/Command для множественного выбора)
+          <select id="parents" multiple size="4"></select>
+        </label>
+        <label>Супруг(а)
+          <select id="spouse"><option value="">-- нет --</option></select>
+        </label>
+        <div class="buttons">
+          <button type="submit">Сохранить</button>
+          <button type="button" id="resetBtn">Новый</button>
+        </div>
+      </form>
+
+      <h2>Список персонажей</h2>
+      <ul id="peopleList"></ul>
+    </section>
+
+    <section class="canvas">
+      <svg id="svgCanvas"></svg>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

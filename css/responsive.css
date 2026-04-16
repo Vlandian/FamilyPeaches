@@ -1,0 +1,18 @@
+﻿@media (max-width: 760px) {
+    .detailsLayout {
+        grid-template-columns: 1fr;
+    }
+
+    .detailsPortrait {
+        max-height: 48vh;
+    }
+}
+
+    .modal .modal-body .row {
+        display: flex;
+        gap: 8px;
+    }
+
+        .modal .modal-body .row .col {
+            flex: 1;
+        }
