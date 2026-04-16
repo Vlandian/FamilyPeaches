@@ -96,14 +96,24 @@ function remoteModeLabel(mode) {
   return 'гость'
 }
 
+function remoteModeDisplayName(mode) {
+  if (mode === 'editor') return 'Редактор'
+  if (mode === 'viewer') return 'Зритель'
+  return 'Гость'
+}
+
 function getLocalPresenceMode() {
   if (!remoteUser) return 'guest'
   return remoteCanEdit ? 'editor' : 'viewer'
 }
 
 function getLocalPresenceName() {
-  if (remoteUser?.email) return remoteUser.email
-  return `Гость ${remoteClientId.slice(-4)}`
+  return remoteModeDisplayName(getLocalPresenceMode())
+}
+
+function getLocalPresenceIdentity() {
+  if (remoteUser?.id) return `user:${remoteUser.id}`
+  return `guest:${remoteClientId}`
 }
 
 function buildPresencePayload() {
@@ -111,6 +121,7 @@ function buildPresencePayload() {
 
   return {
     clientId: remoteClientId,
+    identityKey: getLocalPresenceIdentity(),
     name: getLocalPresenceName(),
     mode: getLocalPresenceMode(),
     selectedIds: Array.from(selectedPersonIds),
@@ -118,6 +129,57 @@ function buildPresencePayload() {
     editingPersonName: editingPerson ? displayName(editingPerson) : '',
     at: Date.now()
   }
+}
+
+function getPresenceIdentity(person) {
+  if (person?.identityKey) return person.identityKey
+  if (person?.userId) return `user:${person.userId}`
+  if (person?.name && String(person.name).includes('@')) return `email:${String(person.name).toLowerCase()}`
+  return person?.clientId || ''
+}
+
+function comparePresencePeople(a, b) {
+  const modeOrder = { editor: 0, viewer: 1, guest: 2 }
+  const aMode = modeOrder[a?.mode] ?? 3
+  const bMode = modeOrder[b?.mode] ?? 3
+  if (aMode !== bMode) return aMode - bMode
+  return getPresenceIdentity(a).localeCompare(getPresenceIdentity(b), 'ru')
+}
+
+function normalizeRemotePresence(rawPeople) {
+  const byIdentity = new Map()
+
+  rawPeople.forEach(person => {
+    if (!person?.clientId || person.clientId === remoteClientId) return
+
+    const identity = getPresenceIdentity(person)
+    if (!identity || identity === getLocalPresenceIdentity()) return
+
+    const previous = byIdentity.get(identity)
+    if (!previous || Number(person.at || 0) >= Number(previous.at || 0)) {
+      byIdentity.set(identity, person)
+    }
+  })
+
+  return Array.from(byIdentity.values()).sort(comparePresencePeople)
+}
+
+function withPresenceDisplayNames(people) {
+  const counters = { editor: 0, viewer: 0, guest: 0 }
+
+  return people.map(person => {
+    if (person.clientId === remoteClientId || getPresenceIdentity(person) === getLocalPresenceIdentity()) {
+      return { ...person, displayName: 'Вы' }
+    }
+
+    const mode = person.mode || 'guest'
+    counters[mode] = (counters[mode] || 0) + 1
+
+    return {
+      ...person,
+      displayName: `${remoteModeDisplayName(mode)} ${counters[mode]}`
+    }
+  })
 }
 
 function setRemotePanelOpen(open) {
@@ -147,7 +209,7 @@ function renderRemotePresenceList() {
   }
 
   const local = buildPresencePayload()
-  const people = [local, ...remotePresenceState]
+  const people = withPresenceDisplayNames([local, ...remotePresenceState])
 
   remotePresenceList.innerHTML = `
     <div class="remotePresenceTitle">Сейчас в древе</div>
@@ -164,7 +226,7 @@ function renderRemotePresenceList() {
         <div class="remotePresenceItem ${editing ? 'editing' : ''}">
           <span class="remotePresenceDot"></span>
           <div>
-            <div class="remotePresenceName">${escapeHtml(person.clientId === remoteClientId ? 'Вы' : person.name)}</div>
+            <div class="remotePresenceName">${escapeHtml(person.displayName || person.name || remoteModeDisplayName(person.mode))}</div>
             <div class="remotePresenceMeta">${escapeHtml(remoteModeLabel(person.mode))} · ${escapeHtml(activity)}</div>
           </div>
         </div>
@@ -178,7 +240,7 @@ function getRemoteCardActivity(personId) {
   if (editing) {
     return {
       type: 'editing',
-      label: `${editing.name} редактирует`
+      label: 'Редактируется'
     }
   }
 
@@ -186,7 +248,7 @@ function getRemoteCardActivity(personId) {
   if (selected) {
     return {
       type: 'selected',
-      label: `${selected.name} выбрал(а)`
+      label: ''
     }
   }
 
@@ -202,10 +264,10 @@ function applyRemotePresenceToCards() {
     card.classList.toggle('remoteEditing', activity?.type === 'editing')
 
     card.querySelector('.remoteActivityBadge')?.remove()
-    if (!activity) return
+    if (!activity || activity.type !== 'editing') return
 
     const badge = document.createElement('div')
-    badge.className = `remoteActivityBadge ${activity.type === 'editing' ? 'editing' : ''}`
+    badge.className = 'remoteActivityBadge editing'
     badge.textContent = activity.label
     card.appendChild(badge)
   })
@@ -215,9 +277,7 @@ function handleRemotePresenceSync() {
   if (!remoteChannel) return
 
   const state = remoteChannel.presenceState()
-  remotePresenceState = Object.values(state)
-    .flat()
-    .filter(person => person?.clientId && person.clientId !== remoteClientId)
+  remotePresenceState = normalizeRemotePresence(Object.values(state).flat())
 
   renderRemotePresenceList()
   applyRemotePresenceToCards()
