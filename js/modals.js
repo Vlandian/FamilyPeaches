@@ -225,11 +225,17 @@ function openPersonDetailsModal(person) {
 
 function openPersonModal(person) {
   if (!requireEditPermission()) return
+  if (typeof setRemoteEditingPerson === 'function') setRemoteEditingPerson(person.id)
 
   document.querySelectorAll('.modal-overlay').forEach(n => n.remove())
 
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
+  const originalOverlayRemove = overlay.remove.bind(overlay)
+  overlay.remove = () => {
+    if (typeof clearRemoteEditingPerson === 'function') clearRemoteEditingPerson(person.id)
+    originalOverlayRemove()
+  }
 
   const modal = document.createElement('div')
   modal.className = 'modal'

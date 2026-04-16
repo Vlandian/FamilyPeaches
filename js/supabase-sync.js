@@ -7,6 +7,7 @@ const remoteGuestInput = document.getElementById('remoteGuest')
 const remoteLogoutBtn = document.getElementById('remoteLogoutBtn')
 const authPanel = document.getElementById('authPanel')
 const authPanelToggle = document.getElementById('authPanelToggle')
+const remotePresenceList = document.getElementById('remotePresenceList')
 const remoteSubmitBtn = remoteLoginForm?.querySelector('button[type="submit"]')
 
 let supabaseClient = null
@@ -24,6 +25,10 @@ let remoteSaveQueued = false
 let remoteReloadQueued = false
 let remoteEntityMode = false
 let remoteSnapshot = normalizeData({ people: [], houses: [] })
+let remotePresenceState = []
+let remoteEditingPersonId = ''
+let remotePresenceTimer = null
+const remoteClientId = `client_${uid()}_${Date.now()}`
 let remoteInitialized = false
 
 function getInitialRemoteTreeKey() {
@@ -85,6 +90,36 @@ function roleCanEdit(role) {
   return role === 'owner' || role === 'editor'
 }
 
+function remoteModeLabel(mode) {
+  if (mode === 'editor') return 'редактор'
+  if (mode === 'viewer') return 'просмотр'
+  return 'гость'
+}
+
+function getLocalPresenceMode() {
+  if (!remoteUser) return 'guest'
+  return remoteCanEdit ? 'editor' : 'viewer'
+}
+
+function getLocalPresenceName() {
+  if (remoteUser?.email) return remoteUser.email
+  return `Гость ${remoteClientId.slice(-4)}`
+}
+
+function buildPresencePayload() {
+  const editingPerson = remoteEditingPersonId ? getPerson(remoteEditingPersonId) : null
+
+  return {
+    clientId: remoteClientId,
+    name: getLocalPresenceName(),
+    mode: getLocalPresenceMode(),
+    selectedIds: Array.from(selectedPersonIds),
+    editingPersonId: remoteEditingPersonId || '',
+    editingPersonName: editingPerson ? displayName(editingPerson) : '',
+    at: Date.now()
+  }
+}
+
 function setRemotePanelOpen(open) {
   if (!authPanel || !authPanelToggle) return
 
@@ -101,12 +136,126 @@ function syncGuestControls() {
   if (remoteSubmitBtn) remoteSubmitBtn.textContent = guest ? 'Смотреть' : 'Войти'
 }
 
+function renderRemotePresenceList() {
+  if (!remotePresenceList) return
+
+  const connected = isRemoteTreeActive()
+  remotePresenceList.hidden = !connected
+  if (!connected) {
+    remotePresenceList.innerHTML = ''
+    return
+  }
+
+  const local = buildPresencePayload()
+  const people = [local, ...remotePresenceState]
+
+  remotePresenceList.innerHTML = `
+    <div class="remotePresenceTitle">Сейчас в древе</div>
+    ${people.map(person => {
+      const editing = !!person.editingPersonId
+      const selectedCount = Array.isArray(person.selectedIds) ? person.selectedIds.length : 0
+      const activity = editing
+        ? `редактирует: ${person.editingPersonName || 'персонаж'}`
+        : selectedCount > 0
+          ? `выбрано карточек: ${selectedCount}`
+          : 'смотрит древо'
+
+      return `
+        <div class="remotePresenceItem ${editing ? 'editing' : ''}">
+          <span class="remotePresenceDot"></span>
+          <div>
+            <div class="remotePresenceName">${escapeHtml(person.clientId === remoteClientId ? 'Вы' : person.name)}</div>
+            <div class="remotePresenceMeta">${escapeHtml(remoteModeLabel(person.mode))} · ${escapeHtml(activity)}</div>
+          </div>
+        </div>
+      `
+    }).join('')}
+  `
+}
+
+function getRemoteCardActivity(personId) {
+  const editing = remotePresenceState.find(person => person.editingPersonId === personId)
+  if (editing) {
+    return {
+      type: 'editing',
+      label: `${editing.name} редактирует`
+    }
+  }
+
+  const selected = remotePresenceState.find(person => Array.isArray(person.selectedIds) && person.selectedIds.includes(personId))
+  if (selected) {
+    return {
+      type: 'selected',
+      label: `${selected.name} выбрал(а)`
+    }
+  }
+
+  return null
+}
+
+function applyRemotePresenceToCards() {
+  if (!cardsContainer) return
+
+  cardsContainer.querySelectorAll('.card').forEach(card => {
+    const activity = getRemoteCardActivity(card.dataset.id)
+    card.classList.toggle('remoteSelected', activity?.type === 'selected')
+    card.classList.toggle('remoteEditing', activity?.type === 'editing')
+
+    card.querySelector('.remoteActivityBadge')?.remove()
+    if (!activity) return
+
+    const badge = document.createElement('div')
+    badge.className = `remoteActivityBadge ${activity.type === 'editing' ? 'editing' : ''}`
+    badge.textContent = activity.label
+    card.appendChild(badge)
+  })
+}
+
+function handleRemotePresenceSync() {
+  if (!remoteChannel) return
+
+  const state = remoteChannel.presenceState()
+  remotePresenceState = Object.values(state)
+    .flat()
+    .filter(person => person?.clientId && person.clientId !== remoteClientId)
+
+  renderRemotePresenceList()
+  applyRemotePresenceToCards()
+}
+
+async function trackRemotePresence() {
+  if (!remoteChannel || !isRemoteTreeActive()) return
+  await remoteChannel.track(buildPresencePayload())
+  renderRemotePresenceList()
+}
+
+function scheduleRemotePresence() {
+  if (!remoteChannel || !isRemoteTreeActive()) return
+
+  clearTimeout(remotePresenceTimer)
+  remotePresenceTimer = setTimeout(trackRemotePresence, 150)
+}
+
+function setRemoteEditingPerson(personId) {
+  remoteEditingPersonId = personId || ''
+  scheduleRemotePresence()
+  applyRemotePresenceToCards()
+}
+
+function clearRemoteEditingPerson(personId) {
+  if (personId && remoteEditingPersonId !== personId) return
+  remoteEditingPersonId = ''
+  scheduleRemotePresence()
+  applyRemotePresenceToCards()
+}
+
 function updateRemoteControls() {
   if (!isSupabaseConfigured()) {
     setRemoteStatus('Общие древа не настроены')
     remoteLoginForm.hidden = true
     remoteLogoutBtn.hidden = true
     if (typeof setTreeReadOnly === 'function') setTreeReadOnly(false)
+    renderRemotePresenceList()
     return
   }
 
@@ -120,6 +269,7 @@ function updateRemoteControls() {
   if (!connected) {
     setRemoteStatus('Локальное древо')
     if (typeof setTreeReadOnly === 'function') setTreeReadOnly(false)
+    renderRemotePresenceList()
     return
   }
 
@@ -132,6 +282,7 @@ function updateRemoteControls() {
   }
 
   if (typeof setTreeReadOnly === 'function') setTreeReadOnly(!remoteCanEdit)
+  renderRemotePresenceList()
 }
 
 function cloneRemoteData(source = data) {
@@ -355,7 +506,12 @@ function subscribeRemoteTree() {
   if (!supabaseClient || !getRemoteTreeId() || remoteChannel) return
 
   remoteChannel = supabaseClient
-    .channel(`tree-${getRemoteTreeId()}`)
+    .channel(`tree-${getRemoteTreeId()}`, {
+      config: { presence: { key: remoteClientId } }
+    })
+    .on('presence', { event: 'sync' }, handleRemotePresenceSync)
+    .on('presence', { event: 'join' }, handleRemotePresenceSync)
+    .on('presence', { event: 'leave' }, handleRemotePresenceSync)
     .on(
       'postgres_changes',
       {
@@ -422,13 +578,19 @@ function subscribeRemoteTree() {
         finishRemoteEntityApply()
       }
     )
-    .subscribe()
+    .subscribe(status => {
+      if (status === 'SUBSCRIBED') trackRemotePresence()
+    })
 }
 
 async function unsubscribeRemoteTree() {
   if (!supabaseClient || !remoteChannel) return
+  clearTimeout(remotePresenceTimer)
   await supabaseClient.removeChannel(remoteChannel)
   remoteChannel = null
+  remotePresenceState = []
+  renderRemotePresenceList()
+  applyRemotePresenceToCards()
 }
 
 function diffEntities(currentItems, snapshotItems) {

@@ -159,6 +159,8 @@ function updateCardSelectionClasses() {
   cardsContainer.querySelectorAll('.card').forEach(card => {
     card.classList.toggle('selected', selectedPersonIds.has(card.dataset.id))
   })
+  if (typeof applyRemotePresenceToCards === 'function') applyRemotePresenceToCards()
+  if (typeof scheduleRemotePresence === 'function') scheduleRemotePresence()
 }
 
 function togglePersonSelection(id) {

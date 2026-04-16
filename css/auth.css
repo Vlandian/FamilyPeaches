@@ -93,6 +93,51 @@
         background: #1f2f3d;
     }
 
+.remotePresenceList {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e7edf2;
+}
+
+.remotePresenceTitle {
+    margin-bottom: 6px;
+    color: #34495e;
+    font-weight: 700;
+}
+
+.remotePresenceItem {
+    display: grid;
+    grid-template-columns: 10px 1fr;
+    gap: 8px;
+    align-items: start;
+    padding: 6px 0;
+    color: #34495e;
+}
+
+.remotePresenceDot {
+    width: 10px;
+    height: 10px;
+    margin-top: 4px;
+    border-radius: 50%;
+    background: #6f8fb1;
+}
+
+.remotePresenceItem.editing .remotePresenceDot {
+    background: #d24b4b;
+}
+
+.remotePresenceName {
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.remotePresenceMeta {
+    margin-top: 2px;
+    color: #6c7782;
+    font-size: 12px;
+    line-height: 1.3;
+}
+
 body.readOnlyMode .authPanel {
     border: 1px solid #d8e0e8;
 }

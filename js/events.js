@@ -105,6 +105,9 @@ cardsContainer.addEventListener('click', ev => {
     return
   }
 
+  selectedPersonIds.clear()
+  selectedPersonIds.add(id)
+  updateCardSelectionClasses()
   openPersonDetailsModal(person)
 })
 
