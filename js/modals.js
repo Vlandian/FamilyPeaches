@@ -458,7 +458,8 @@ function openPersonModal(person) {
     parentsField.appendChild(parentOption)
   })
 
-  const spouseIds = getSpouseIds(person)
+  const originalSpouseIds = getSpouseIds(person)
+  const spouseIds = originalSpouseIds
   Array.from(spouseField.options).forEach(option => {
     option.selected = spouseIds.includes(option.value)
   })
@@ -485,6 +486,10 @@ function openPersonModal(person) {
       return
     }
 
+    const selectedSpouseIds = Array.from(spouseField.selectedOptions).map(o => o.value)
+    const latestSpouseIds = getSpouseIds(getPerson(person.id) || person)
+    const preservedNewSpouseIds = latestSpouseIds.filter(id => !originalSpouseIds.includes(id))
+    const nextSpouseIds = uniqueIds([...selectedSpouseIds, ...preservedNewSpouseIds])
     const updated = {
       id: person.id,
       firstName: firstNameField.value.trim(),
@@ -501,8 +506,8 @@ function openPersonModal(person) {
       portraitFocusY: normalizePercent(portraitFocusYField.value, 35),
       portraitZoom: normalizePortraitZoom(Number(portraitZoomField.value) / 100, 1),
       parents: Array.from(parentsField.selectedOptions).map(o => o.value),
-      spouses: Array.from(spouseField.selectedOptions).map(o => o.value),
-      spouse: Array.from(spouseField.selectedOptions).map(o => o.value)[0] || null
+      spouses: nextSpouseIds,
+      spouse: nextSpouseIds[0] || null
     }
 
     if (!validatePerson(updated)) return
