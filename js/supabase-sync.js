@@ -35,6 +35,28 @@ function getUrlRemoteTreeKey() {
   return (params.get('tree') || params.get('treeId') || '').trim()
 }
 
+function setRemoteTreeUrl(treeId, replace = false) {
+  if (!window.history?.pushState) return
+
+  const url = new URL(window.location.href)
+  url.searchParams.set('tree', treeId)
+  url.searchParams.delete('treeId')
+
+  const method = replace ? 'replaceState' : 'pushState'
+  window.history[method]({ remoteTreeId: treeId }, '', url)
+}
+
+function clearRemoteTreeUrl(replace = false) {
+  if (!window.history?.pushState) return
+
+  const url = new URL(window.location.href)
+  url.searchParams.delete('tree')
+  url.searchParams.delete('treeId')
+
+  const method = replace ? 'replaceState' : 'pushState'
+  window.history[method]({ remoteTreeId: '' }, '', url)
+}
+
 function isSupabaseConfigured() {
   return !!(
     window.supabase &&
@@ -605,7 +627,7 @@ async function saveRemoteTree() {
   }
 }
 
-async function connectRemoteTree(treeId, email, password, asGuest = false) {
+async function connectRemoteTree(treeId, email, password, asGuest = false, options = {}) {
   const nextTreeId = String(treeId || '').trim()
 
   if (!isSupabaseConfigured()) {
@@ -638,6 +660,7 @@ async function connectRemoteTree(treeId, email, password, asGuest = false) {
   remoteSaveQueued = false
   remoteReloadQueued = false
   remoteSnapshot = normalizeData({ people: [], houses: [] })
+  setRemoteTreeUrl(nextTreeId, !!options.replaceUrl)
 
   if (asGuest) {
     await supabaseClient.auth.signOut()
@@ -683,6 +706,7 @@ async function signOutRemote() {
   clearTimeout(remoteSaveTimer)
   await unsubscribeRemoteTree()
   await supabaseClient.auth.signOut()
+  clearRemoteTreeUrl()
   remoteUser = null
   restoreLocalTree()
 }
@@ -726,6 +750,6 @@ async function initializeRemoteSync() {
   if (urlTreeKey) {
     if (remoteGuestInput) remoteGuestInput.checked = true
     syncGuestControls()
-    connectRemoteTree(urlTreeKey, '', '', true)
+    connectRemoteTree(urlTreeKey, '', '', true, { replaceUrl: true })
   }
 }
