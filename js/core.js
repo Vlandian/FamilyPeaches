@@ -523,8 +523,18 @@ function calculateAge(person) {
   return age >= 0 ? age : null
 }
 
+function calculateAgeAtDeath(person) {
+  if (person?.isAlive || person.birthYear === null || person.deathYear === null) return null
+
+  const age = person.deathYear - person.birthYear
+  return age >= 0 ? age : null
+}
+
 function cardLifeMeta(person) {
-  if (!person.isAlive) return lifeYears(person)
+  if (!person.isAlive) {
+    const ageAtDeath = calculateAgeAtDeath(person)
+    return ageAtDeath !== null ? `Возраст смерти: ${ageAtDeath}` : 'Возраст смерти неизвестен'
+  }
 
   const age = calculateAge(person)
   if (age !== null) return `Возраст: ${age}`
