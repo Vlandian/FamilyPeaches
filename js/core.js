@@ -28,6 +28,7 @@ const sidePanel = document.getElementById('sidePanel')
 const panelToggle = document.getElementById('panelToggle')
 const panelClose = document.getElementById('panelClose')
 const peopleSearchInput = document.getElementById('peopleSearch')
+const currentYearInput = document.getElementById('currentYearInput')
 
 const WORLD_WIDTH = 30000
 const WORLD_HEIGHT = 30000
@@ -199,6 +200,7 @@ function updateReadOnlyControls() {
     'addHouseBtn',
     'cancelHouseEditBtn',
     'removeHouseCrestBtn',
+    'currentYearInput',
     'importJsonBtn',
     'resetTreeBtn',
     'importJsonFile'
@@ -294,6 +296,11 @@ function toNullableNumber(value) {
   if (value === '' || value === null || value === undefined) return null
   const num = Number(value)
   return Number.isFinite(num) ? num : null
+}
+
+function normalizeCurrentYear(value) {
+  const year = toNullableNumber(value)
+  return year === null ? null : Math.trunc(year)
 }
 
 function escapeHtml(str) {
@@ -502,6 +509,35 @@ function personMatchesSearch(person, query) {
     .join(' ')
     .toLowerCase()
     .includes(query)
+}
+
+function getCurrentTreeYear() {
+  return normalizeCurrentYear(data?.settings?.currentYear)
+}
+
+function calculateAge(person) {
+  const currentYear = getCurrentTreeYear()
+  if (!person?.isAlive || currentYear === null || person.birthYear === null) return null
+
+  const age = currentYear - person.birthYear
+  return age >= 0 ? age : null
+}
+
+function cardLifeMeta(person) {
+  if (!person.isAlive) return lifeYears(person)
+
+  const age = calculateAge(person)
+  if (age !== null) return `Возраст: ${age}`
+  if (getCurrentTreeYear() !== null) return 'Возраст неизвестен'
+
+  return lifeYears(person)
+}
+
+function syncCurrentYearControl() {
+  if (!currentYearInput) return
+  const currentYear = getCurrentTreeYear()
+  const nextValue = currentYear === null ? '' : String(currentYear)
+  if (currentYearInput.value !== nextValue) currentYearInput.value = nextValue
 }
 
 function renderNameList(names, emptyText) {

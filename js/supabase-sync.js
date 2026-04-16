@@ -657,6 +657,19 @@ function applyLegacyRemoteTree(row, options = {}) {
   setRemoteSnapshot()
 }
 
+function applyRemoteTreeSettings(row) {
+  const rawData = row?.data
+  if (!rawData || !hasOwnValue(rawData, 'settings')) return
+
+  const nextSettings = normalizeSettings(rawData.settings)
+  if (entitySignature(nextSettings) === entitySignature(data.settings)) return
+
+  data.settings = nextSettings
+  remoteSnapshot.settings = cloneTreeData(nextSettings)
+  localStorage.setItem(getActiveStorageKey(), JSON.stringify(data))
+  renderAll()
+}
+
 function restoreLocalTree() {
   remoteTreeId = ''
   remoteTreeVersion = null
@@ -756,7 +769,8 @@ async function loadRemoteTree(options = {}) {
     : []
   const nextData = normalizeData({
     people: normalizeRemotePeopleRows(peopleResult.data, fallbackPeople),
-    houses: normalizeRemoteHouseRows(housesResult.data)
+    houses: normalizeRemoteHouseRows(housesResult.data),
+    settings: row.data?.settings
   })
 
   applyRemoteData(nextData, options)
@@ -901,6 +915,11 @@ function subscribeRemoteTree() {
             remoteTreeName = payload.new.name
             updateRemoteControls()
           }
+          if (remoteSaveInFlight || remoteSaveQueued) {
+            remoteReloadQueued = true
+            return
+          }
+          applyRemoteTreeSettings(payload.new)
           return
         }
 
@@ -1155,11 +1174,13 @@ async function saveRemoteEntities() {
   const currentData = cloneRemoteData()
   const peopleDiff = diffEntities(currentData.people, remoteSnapshot.people)
   const houseDiff = diffEntities(currentData.houses, remoteSnapshot.houses)
+  const settingsChanged = entitySignature(currentData.settings) !== entitySignature(remoteSnapshot.settings)
   const hasChanges =
     peopleDiff.changed.length > 0 ||
     peopleDiff.removed.length > 0 ||
     houseDiff.changed.length > 0 ||
-    houseDiff.removed.length > 0
+    houseDiff.removed.length > 0 ||
+    settingsChanged
 
   if (!hasChanges) {
     finishRemoteSave()
@@ -1191,12 +1212,16 @@ async function saveRemoteEntities() {
     return
   }
 
+  const treeUpdate = {
+    updated_at: new Date().toISOString(),
+    updated_by: remoteUser.email
+  }
+
+  if (settingsChanged) treeUpdate.data = currentData
+
   await supabaseClient
     .from('trees')
-    .update({
-      updated_at: new Date().toISOString(),
-      updated_by: remoteUser.email
-    })
+    .update(treeUpdate)
     .eq('id', getRemoteTreeId())
 
   setRemoteSnapshot(currentData)

@@ -201,7 +201,7 @@ function renderGraph() {
       ${portraitHtml}
       ${titleHtml}
       <h3>${escapeHtml(fullName(p))}</h3>
-      <p class="cardMeta">${escapeHtml(lifeYears(p))}</p>
+      <p class="cardMeta">${escapeHtml(cardLifeMeta(p))}</p>
       <div class="statusPill ${p.isAlive ? 'alive' : 'dead'}">${p.isAlive ? 'Жив' : 'Умер'}</div>
       ${houseHtml}
       ${descriptionHtml}

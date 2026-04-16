@@ -145,7 +145,13 @@ body.panel-open .panelToggle {
 }
 
 .housesPanel {
+    margin-top: 16px;
+}
+
+.settingsPanel {
     margin-top: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e2e8ee;
 }
 
 .panel .secondaryBtn,

@@ -49,6 +49,12 @@ function normalizeHouse(raw, index) {
   }
 }
 
+function normalizeSettings(raw) {
+  return {
+    currentYear: normalizeCurrentYear(raw?.currentYear)
+  }
+}
+
 function normalizeData(raw) {
   const people = Array.isArray(raw?.people) ? raw.people.map(normalizePerson) : []
   const houses = Array.isArray(raw?.houses)
@@ -77,7 +83,8 @@ function normalizeData(raw) {
 
   const normalized = {
     people,
-    houses
+    houses,
+    settings: normalizeSettings(raw?.settings)
   }
 
   return normalized
@@ -96,7 +103,7 @@ function load() {
     data = normalizeData(legacy)
     repairAllRelationships()
   } catch (e) {
-    data = { people: [] }
+    data = normalizeData({ people: [] })
   }
 }
 

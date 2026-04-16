@@ -1,6 +1,7 @@
 ﻿function renderAll() {
   syncSelectedPeople()
   syncViewpointPerson()
+  syncCurrentYearControl()
   renderHousesList()
   renderList()
   renderGraph()
@@ -10,6 +11,17 @@
 panelToggle.addEventListener('click', () => setPanelOpen(!sidePanel.classList.contains('open')))
 panelClose.addEventListener('click', () => setPanelOpen(false))
 peopleSearchInput.addEventListener('input', renderList)
+currentYearInput.addEventListener('change', () => {
+  if (!requireEditPermission()) {
+    syncCurrentYearControl()
+    return
+  }
+
+  if (!data.settings) data.settings = {}
+  data.settings.currentYear = normalizeCurrentYear(currentYearInput.value)
+  save()
+  renderAll()
+})
 cancelHouseEditBtn.addEventListener('click', resetHouseForm)
 removeHouseCrestBtn.addEventListener('click', markHouseCrestForRemoval)
 houseCrestUrlInput.addEventListener('input', () => {
