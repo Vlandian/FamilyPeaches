@@ -213,6 +213,8 @@ function renderGraph() {
       const dragIds = selectedPersonIds.has(p.id)
         ? Array.from(selectedPersonIds)
         : [p.id]
+      if (typeof beginRemotePersonMove === 'function') beginRemotePersonMove(dragIds)
+
       const originals = new Map(
         dragIds
           .map(id => getPerson(id))
@@ -254,6 +256,7 @@ function renderGraph() {
         window.removeEventListener('pointermove', moveHandler)
         window.removeEventListener('pointerup', upHandler)
         save()
+        if (typeof endRemotePersonMove === 'function') endRemotePersonMove()
         if (moved) {
           setTimeout(() => {
             cardsContainer.querySelectorAll('.card').forEach(n => {

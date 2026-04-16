@@ -17,7 +17,8 @@ let remoteCanEdit = false
 let remoteTreeId = ''
 let remoteTreeVersion = null
 let remoteTreeName = ''
-let remoteChannel = null
+let remoteDataChannel = null
+let remotePresenceChannel = null
 let remoteApplying = false
 let remoteSaveTimer = null
 let remoteSaveInFlight = false
@@ -28,6 +29,7 @@ let remoteSnapshot = normalizeData({ people: [], houses: [] })
 let remotePresenceState = []
 let remoteEditingPersonId = ''
 let remotePresenceTimer = null
+let remoteMovingPersonIds = new Set()
 const remoteClientId = `client_${uid()}_${Date.now()}`
 let remoteInitialized = false
 
@@ -226,7 +228,7 @@ function renderRemotePresenceList() {
         <div class="remotePresenceItem ${editing ? 'editing' : ''}">
           <span class="remotePresenceDot"></span>
           <div>
-            <div class="remotePresenceName">${escapeHtml(person.displayName || person.name || remoteModeDisplayName(person.mode))}</div>
+            <div class="remotePresenceName">${escapeHtml(person.displayName || remoteModeDisplayName(person.mode))}</div>
             <div class="remotePresenceMeta">${escapeHtml(remoteModeLabel(person.mode))} · ${escapeHtml(activity)}</div>
           </div>
         </div>
@@ -274,9 +276,9 @@ function applyRemotePresenceToCards() {
 }
 
 function handleRemotePresenceSync() {
-  if (!remoteChannel) return
+  if (!remotePresenceChannel) return
 
-  const state = remoteChannel.presenceState()
+  const state = remotePresenceChannel.presenceState()
   remotePresenceState = normalizeRemotePresence(Object.values(state).flat())
 
   renderRemotePresenceList()
@@ -284,13 +286,13 @@ function handleRemotePresenceSync() {
 }
 
 async function trackRemotePresence() {
-  if (!remoteChannel || !isRemoteTreeActive()) return
-  await remoteChannel.track(buildPresencePayload())
+  if (!remotePresenceChannel || !isRemoteTreeActive()) return
+  await remotePresenceChannel.track(buildPresencePayload())
   renderRemotePresenceList()
 }
 
 function scheduleRemotePresence() {
-  if (!remoteChannel || !isRemoteTreeActive()) return
+  if (!remotePresenceChannel || !isRemoteTreeActive()) return
 
   clearTimeout(remotePresenceTimer)
   remotePresenceTimer = setTimeout(trackRemotePresence, 150)
@@ -307,6 +309,14 @@ function clearRemoteEditingPerson(personId) {
   remoteEditingPersonId = ''
   scheduleRemotePresence()
   applyRemotePresenceToCards()
+}
+
+function beginRemotePersonMove(personIds = []) {
+  remoteMovingPersonIds = new Set((Array.isArray(personIds) ? personIds : []).filter(Boolean).map(String))
+}
+
+function endRemotePersonMove() {
+  remoteMovingPersonIds.clear()
 }
 
 function updateRemoteControls() {
@@ -556,22 +566,34 @@ function finishRemoteEntityApply() {
   remoteApplying = true
   repairAllRelationships()
   localStorage.setItem(getActiveStorageKey(), JSON.stringify(data))
-  selectedPersonIds.clear()
   renderAll()
   updateRemoteControls()
   remoteApplying = false
 }
 
-function subscribeRemoteTree() {
-  if (!supabaseClient || !getRemoteTreeId() || remoteChannel) return
+function shouldDeferRemoteEntityApply() {
+  return remoteSaveInFlight || remoteSaveQueued || remoteMovingPersonIds.size > 0
+}
 
-  remoteChannel = supabaseClient
-    .channel(`tree-${getRemoteTreeId()}`, {
+function subscribeRemoteTree() {
+  if (!supabaseClient || !getRemoteTreeId() || remoteDataChannel || remotePresenceChannel) return
+
+  remotePresenceChannel = supabaseClient
+    .channel(`tree-presence-${getRemoteTreeId()}`, {
       config: { presence: { key: remoteClientId } }
     })
     .on('presence', { event: 'sync' }, handleRemotePresenceSync)
     .on('presence', { event: 'join' }, handleRemotePresenceSync)
     .on('presence', { event: 'leave' }, handleRemotePresenceSync)
+    .subscribe(status => {
+      if (status === 'SUBSCRIBED') trackRemotePresence()
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('Presence-канал Supabase не подключился:', status)
+      }
+    })
+
+  remoteDataChannel = supabaseClient
+    .channel(`tree-data-${getRemoteTreeId()}`)
     .on(
       'postgres_changes',
       {
@@ -604,7 +626,7 @@ function subscribeRemoteTree() {
       },
       payload => {
         if (!remoteEntityMode) return
-        if (remoteSaveInFlight || remoteSaveQueued) {
+        if (shouldDeferRemoteEntityApply()) {
           remoteReloadQueued = true
           return
         }
@@ -626,7 +648,7 @@ function subscribeRemoteTree() {
       },
       payload => {
         if (!remoteEntityMode) return
-        if (remoteSaveInFlight || remoteSaveQueued) {
+        if (shouldDeferRemoteEntityApply()) {
           remoteReloadQueued = true
           return
         }
@@ -639,15 +661,19 @@ function subscribeRemoteTree() {
       }
     )
     .subscribe(status => {
-      if (status === 'SUBSCRIBED') trackRemotePresence()
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('Realtime-канал данных Supabase не подключился:', status)
+      }
     })
 }
 
 async function unsubscribeRemoteTree() {
-  if (!supabaseClient || !remoteChannel) return
+  if (!supabaseClient || (!remoteDataChannel && !remotePresenceChannel)) return
   clearTimeout(remotePresenceTimer)
-  await supabaseClient.removeChannel(remoteChannel)
-  remoteChannel = null
+  if (remotePresenceChannel) await supabaseClient.removeChannel(remotePresenceChannel)
+  if (remoteDataChannel) await supabaseClient.removeChannel(remoteDataChannel)
+  remotePresenceChannel = null
+  remoteDataChannel = null
   remotePresenceState = []
   renderRemotePresenceList()
   applyRemotePresenceToCards()
@@ -671,6 +697,65 @@ function diffEntities(currentItems, snapshotItems) {
   })
 
   return { changed, removed }
+}
+
+function personWithoutPositionSignature(person) {
+  const copy = cloneTreeData(person || {})
+  delete copy.pos
+  return entitySignature(copy)
+}
+
+function isPositionOnlyPersonChange(person) {
+  const oldPerson = remoteSnapshot.people.find(item => item.id === person.id)
+  if (!oldPerson) return false
+
+  return (
+    personWithoutPositionSignature(person) === personWithoutPositionSignature(oldPerson) &&
+    entitySignature(person.pos) !== entitySignature(oldPerson.pos)
+  )
+}
+
+function replacePeopleInDataSet(targetData, people) {
+  const peopleById = new Map((people || []).map(person => [person.id, person]))
+
+  targetData.people = targetData.people.map(person => {
+    const replacement = peopleById.get(person.id)
+    return replacement ? cloneTreeData(replacement) : person
+  })
+}
+
+async function mergeRemotePositionOnlyPeople(changedPeople) {
+  const positionOnlyPeople = changedPeople.filter(isPositionOnlyPersonChange)
+  if (positionOnlyPeople.length === 0) return { people: changedPeople, merged: false }
+
+  const ids = positionOnlyPeople.map(person => person.id)
+  const { data: rows, error } = await supabaseClient
+    .from('tree_people')
+    .select('id,data')
+    .eq('tree_id', getRemoteTreeId())
+    .in('id', ids)
+
+  if (error) {
+    console.warn('Не удалось подтянуть свежие карточки перед сохранением позиций:', error.message)
+    return { people: changedPeople, merged: false }
+  }
+
+  const latestById = new Map((rows || []).map(row => [row.id, row.data]))
+  let merged = false
+
+  const people = changedPeople.map(person => {
+    if (!ids.includes(person.id)) return person
+
+    const latest = latestById.get(person.id)
+    if (!latest) return person
+
+    const mergedPerson = normalizePerson({ ...latest, id: person.id, pos: person.pos }, 0)
+    if (entitySignature(mergedPerson) !== entitySignature(person)) merged = true
+
+    return mergedPerson
+  })
+
+  return { people, merged }
 }
 
 function scheduleRemoteSave() {
@@ -751,8 +836,16 @@ async function saveRemoteEntities() {
 
   setRemoteStatus('Сохраняю изменения...')
 
+  const mergedPeople = await mergeRemotePositionOnlyPeople(peopleDiff.changed)
+  if (mergedPeople.merged) {
+    replacePeopleInDataSet(currentData, mergedPeople.people)
+    replacePeopleInDataSet(data, mergedPeople.people)
+    repairAllRelationships()
+    renderAll()
+  }
+
   const errors = await Promise.all([
-    upsertEntityRows('tree_people', peopleDiff.changed),
+    upsertEntityRows('tree_people', mergedPeople.people),
     upsertEntityRows('tree_houses', houseDiff.changed),
     deleteEntityRows('tree_people', peopleDiff.removed),
     deleteEntityRows('tree_houses', houseDiff.removed)
