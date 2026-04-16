@@ -27,10 +27,26 @@ let remoteReloadQueued = false
 let remoteEntityMode = false
 let remoteSnapshot = normalizeData({ people: [], houses: [] })
 let remotePresenceState = []
+let remotePresenceBroadcasts = new Map()
 let remoteEditingPersonId = ''
 let remotePresenceTimer = null
+let remotePresenceHeartbeatTimer = null
 let remoteMovingPersonIds = new Set()
 const remoteClientId = `client_${uid()}_${Date.now()}`
+const remotePresenceSessionId = (() => {
+  try {
+    const key = 'peaches_presence_session'
+    const existing = sessionStorage.getItem(key)
+    if (existing) return existing
+    const next = `session_${uid()}_${Date.now()}`
+    sessionStorage.setItem(key, next)
+    return next
+  } catch (error) {
+    return `session_${uid()}_${Date.now()}`
+  }
+})()
+const REMOTE_PRESENCE_TTL = 18000
+const REMOTE_PRESENCE_HEARTBEAT = 5000
 let remoteInitialized = false
 
 function getInitialRemoteTreeKey() {
@@ -114,8 +130,7 @@ function getLocalPresenceName() {
 }
 
 function getLocalPresenceIdentity() {
-  if (remoteUser?.id) return `user:${remoteUser.id}`
-  return `guest:${remoteClientId}`
+  return remotePresenceSessionId
 }
 
 function buildPresencePayload() {
@@ -123,6 +138,7 @@ function buildPresencePayload() {
 
   return {
     clientId: remoteClientId,
+    sessionId: remotePresenceSessionId,
     identityKey: getLocalPresenceIdentity(),
     name: getLocalPresenceName(),
     mode: getLocalPresenceMode(),
@@ -135,6 +151,7 @@ function buildPresencePayload() {
 
 function getPresenceIdentity(person) {
   if (person?.identityKey) return person.identityKey
+  if (person?.sessionId) return person.sessionId
   if (person?.userId) return `user:${person.userId}`
   if (person?.name && String(person.name).includes('@')) return `email:${String(person.name).toLowerCase()}`
   return person?.clientId || ''
@@ -150,9 +167,11 @@ function comparePresencePeople(a, b) {
 
 function normalizeRemotePresence(rawPeople) {
   const byIdentity = new Map()
+  const now = Date.now()
 
   rawPeople.forEach(person => {
     if (!person?.clientId || person.clientId === remoteClientId) return
+    if (Number(person.at || 0) && now - Number(person.at || 0) > REMOTE_PRESENCE_TTL) return
 
     const identity = getPresenceIdentity(person)
     if (!identity || identity === getLocalPresenceIdentity()) return
@@ -164,6 +183,37 @@ function normalizeRemotePresence(rawPeople) {
   })
 
   return Array.from(byIdentity.values()).sort(comparePresencePeople)
+}
+
+function collectRealtimePresencePeople() {
+  if (!remotePresenceChannel) return []
+  return Object.values(remotePresenceChannel.presenceState()).flat()
+}
+
+function collectBroadcastPresencePeople() {
+  const now = Date.now()
+  const people = []
+
+  remotePresenceBroadcasts.forEach((person, key) => {
+    if (!person?.at || now - Number(person.at) > REMOTE_PRESENCE_TTL) {
+      remotePresenceBroadcasts.delete(key)
+      return
+    }
+
+    people.push(person)
+  })
+
+  return people
+}
+
+function syncRemotePresenceState() {
+  remotePresenceState = normalizeRemotePresence([
+    ...collectRealtimePresencePeople(),
+    ...collectBroadcastPresencePeople()
+  ])
+
+  renderRemotePresenceList()
+  applyRemotePresenceToCards()
 }
 
 function withPresenceDisplayNames(people) {
@@ -276,19 +326,40 @@ function applyRemotePresenceToCards() {
 }
 
 function handleRemotePresenceSync() {
-  if (!remotePresenceChannel) return
+  syncRemotePresenceState()
+}
 
-  const state = remotePresenceChannel.presenceState()
-  remotePresenceState = normalizeRemotePresence(Object.values(state).flat())
+function handleRemotePresenceBroadcast(person) {
+  if (!person?.clientId || person.clientId === remoteClientId) return
+  const identity = getPresenceIdentity(person)
+  if (!identity || identity === getLocalPresenceIdentity()) return
 
-  renderRemotePresenceList()
-  applyRemotePresenceToCards()
+  remotePresenceBroadcasts.set(identity, {
+    ...person,
+    at: Number(person.at || Date.now())
+  })
+  syncRemotePresenceState()
 }
 
 async function trackRemotePresence() {
   if (!remotePresenceChannel || !isRemoteTreeActive()) return
-  await remotePresenceChannel.track(buildPresencePayload())
+  const payload = buildPresencePayload()
+  await remotePresenceChannel.track(payload)
+  await remotePresenceChannel.send({
+    type: 'broadcast',
+    event: 'presence',
+    payload
+  })
   renderRemotePresenceList()
+}
+
+function startRemotePresenceHeartbeat() {
+  clearInterval(remotePresenceHeartbeatTimer)
+  trackRemotePresence()
+  remotePresenceHeartbeatTimer = setInterval(() => {
+    trackRemotePresence()
+    syncRemotePresenceState()
+  }, REMOTE_PRESENCE_HEARTBEAT)
 }
 
 function scheduleRemotePresence() {
@@ -580,13 +651,19 @@ function subscribeRemoteTree() {
 
   remotePresenceChannel = supabaseClient
     .channel(`tree-presence-${getRemoteTreeId()}`, {
-      config: { presence: { key: remoteClientId } }
+      config: {
+        broadcast: { self: false },
+        presence: { key: remoteClientId }
+      }
     })
     .on('presence', { event: 'sync' }, handleRemotePresenceSync)
     .on('presence', { event: 'join' }, handleRemotePresenceSync)
     .on('presence', { event: 'leave' }, handleRemotePresenceSync)
+    .on('broadcast', { event: 'presence' }, message => {
+      handleRemotePresenceBroadcast(message.payload)
+    })
     .subscribe(status => {
-      if (status === 'SUBSCRIBED') trackRemotePresence()
+      if (status === 'SUBSCRIBED') startRemotePresenceHeartbeat()
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         console.warn('Presence-канал Supabase не подключился:', status)
       }
@@ -670,11 +747,13 @@ function subscribeRemoteTree() {
 async function unsubscribeRemoteTree() {
   if (!supabaseClient || (!remoteDataChannel && !remotePresenceChannel)) return
   clearTimeout(remotePresenceTimer)
+  clearInterval(remotePresenceHeartbeatTimer)
   if (remotePresenceChannel) await supabaseClient.removeChannel(remotePresenceChannel)
   if (remoteDataChannel) await supabaseClient.removeChannel(remoteDataChannel)
   remotePresenceChannel = null
   remoteDataChannel = null
   remotePresenceState = []
+  remotePresenceBroadcasts.clear()
   renderRemotePresenceList()
   applyRemotePresenceToCards()
 }
