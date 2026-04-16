@@ -21,16 +21,18 @@
 }
 
 .relationship-node {
-    fill: #fff;
+    fill: #5d6d7e;
     stroke: #5d6d7e;
-    stroke-width: 3;
+    stroke-width: 0;
 }
 
 .spouse-node {
+    fill: #c0392b;
     stroke: #c0392b;
 }
 
 .parent-node,
 .child-node {
+    fill: #2980b9;
     stroke: #2980b9;
 }
