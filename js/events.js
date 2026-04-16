@@ -119,11 +119,23 @@ canvasEl.addEventListener('contextmenu', ev => {
   if (card) {
     const person = getPerson(card.dataset.id)
     if (!person) return
+    const selectedIds = Array.from(selectedPersonIds)
+    const selectedPerson = selectedIds.length === 1 && selectedIds[0] !== person.id
+      ? getPerson(selectedIds[0])
+      : null
+    const selectedName = selectedPerson ? shortText(displayName(selectedPerson), 26) : ''
 
     const items = [
       { action: 'viewpoint', label: viewpointPersonId === person.id ? 'Убрать точку зрения' : 'Точка зрения' },
       ...(canEditTree()
         ? [
+            ...(selectedPerson
+              ? [
+                  { action: 'selectedAsParent', label: `${selectedName} — родитель` },
+                  { action: 'selectedAsChild', label: `${selectedName} — ребёнок` },
+                  { action: 'selectedAsSpouse', label: `${selectedName} — супруг(а)` }
+                ]
+              : []),
             { action: 'toggleEditor', label: 'Опции' },
             { action: 'addChild', label: 'Добавить ребёнка' },
             { action: 'addSpouse', label: 'Добавить супруга' },
@@ -147,6 +159,12 @@ canvasEl.addEventListener('contextmenu', ev => {
         } else {
           setViewpointPerson(person.id)
         }
+      } else if (action === 'selectedAsParent' && selectedPerson) {
+        assignExistingParent(selectedPerson.id, person.id)
+      } else if (action === 'selectedAsChild' && selectedPerson) {
+        assignExistingChild(selectedPerson.id, person.id)
+      } else if (action === 'selectedAsSpouse' && selectedPerson) {
+        assignExistingSpouse(selectedPerson.id, person.id)
       } else if (action === 'toggleEditor' && requireEditPermission()) {
         openPersonModal(person)
       } else if (action === 'addChild' && requireEditPermission()) {

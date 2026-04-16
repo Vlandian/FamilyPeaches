@@ -199,6 +199,90 @@ function addSpouseFor(person) {
   setTimeout(() => openPersonModal(getPerson(spouse.id)), 50)
 }
 
+function assignExistingParent(parentId, childId) {
+  if (!requireEditPermission()) return false
+
+  const parent = getPerson(parentId)
+  const child = getPerson(childId)
+  if (!parent || !child) return false
+
+  if (parent.id === child.id) {
+    alert('Персонаж не может быть родителем самому себе.')
+    return false
+  }
+
+  if (child.parents.includes(parent.id)) {
+    alert('Этот родитель уже указан.')
+    return false
+  }
+
+  if (child.parents.length >= 2) {
+    alert('У персонажа может быть не больше двух родителей.')
+    return false
+  }
+
+  if (child.spouse === parent.id) {
+    alert('Супруг не может одновременно быть родителем персонажа.')
+    return false
+  }
+
+  const nextChild = {
+    ...child,
+    parents: uniqueIds([...child.parents, parent.id])
+  }
+
+  if (!validatePerson(nextChild)) return false
+
+  child.parents = nextChild.parents
+  repairAllRelationships()
+  save()
+  renderAll()
+  return true
+}
+
+function assignExistingChild(childId, parentId) {
+  return assignExistingParent(parentId, childId)
+}
+
+function assignExistingSpouse(personId, spouseId) {
+  if (!requireEditPermission()) return false
+
+  const person = getPerson(personId)
+  const spouse = getPerson(spouseId)
+  if (!person || !spouse) return false
+
+  if (person.id === spouse.id) {
+    alert('Нельзя назначить персонажа супругом самому себе.')
+    return false
+  }
+
+  if (person.spouse === spouse.id && spouse.spouse === person.id) {
+    alert('Эти персонажи уже супруги.')
+    return false
+  }
+
+  if ((person.spouse && person.spouse !== spouse.id) || (spouse.spouse && spouse.spouse !== person.id)) {
+    alert('У одного из персонажей уже указан супруг или супруга.')
+    return false
+  }
+
+  if (person.parents.includes(spouse.id) || spouse.parents.includes(person.id)) {
+    alert('Супруг не может одновременно быть родителем персонажа.')
+    return false
+  }
+
+  if (isInvalidSpouse(person.id, spouse.id)) {
+    alert('Нельзя назначить супругом прямого родственника по линии родитель-ребёнок.')
+    return false
+  }
+
+  setReciprocalSpouse(person.id, spouse.id)
+  repairAllRelationships()
+  save()
+  renderAll()
+  return true
+}
+
 function setRelationshipOptionAvailability(currentId, parentsEl, spouseEl) {
   const id = currentId || ''
   const map = getPeopleMap()
