@@ -234,6 +234,7 @@ function openPersonModal(person) {
   const originalOverlayRemove = overlay.remove.bind(overlay)
   overlay.remove = () => {
     if (typeof clearRemoteEditingPerson === 'function') clearRemoteEditingPerson(person.id)
+    if (portraitPreviewObjectUrl) URL.revokeObjectURL(portraitPreviewObjectUrl)
     originalOverlayRemove()
   }
 
@@ -295,7 +296,21 @@ function openPersonModal(person) {
         <textarea name="description" rows="5">${escapeHtml(person.description || '')}</textarea>
       </label>
 
-      <img class="portraitPreview" src="${escapeHtml(getPortraitSrc(person))}" alt="Портрет: ${escapeHtml(fullName(person))}">
+      <div class="portraitCropTool">
+        <div class="portraitCropFrame">
+          <img class="portraitPreview" src="${escapeHtml(getPortraitSrc(person))}" alt="Портрет: ${escapeHtml(fullName(person))}" style="object-position: ${escapeHtml(getPortraitObjectPosition(person))}">
+        </div>
+        <div class="portraitCropControls">
+          <p>Кадр для карточки</p>
+          <label>Горизонталь
+            <input name="portraitFocusX" type="range" min="0" max="100" value="${getPortraitFocus(person).x}">
+          </label>
+          <label>Вертикаль
+            <input name="portraitFocusY" type="range" min="0" max="100" value="${getPortraitFocus(person).y}">
+          </label>
+          <button type="button" class="secondaryBtn" id="modalResetPortraitCrop">По центру</button>
+        </div>
+      </div>
 
       <label>Портрет по URL
         <input name="portraitUrl" type="url" value="${person.portrait && !isDataImage(person.portrait) ? escapeHtml(person.portrait) : ''}">
@@ -345,18 +360,79 @@ function openPersonModal(person) {
   const removePortraitField = modal.querySelector('input[name="removePortrait"]')
   const removePortraitButton = modal.querySelector('#modalRemovePortrait')
   const portraitPreview = modal.querySelector('.portraitPreview')
+  const portraitCropFrame = modal.querySelector('.portraitCropFrame')
+  const portraitFocusXField = modal.querySelector('input[name="portraitFocusX"]')
+  const portraitFocusYField = modal.querySelector('input[name="portraitFocusY"]')
+  const resetPortraitCropButton = modal.querySelector('#modalResetPortraitCrop')
   const spouseField = modal.querySelector('select[name="spouses"]')
   const parentsField = modal.querySelector('select[name="parents"]')
+  let portraitPreviewObjectUrl = ''
+
+  function updatePortraitPreviewPosition() {
+    const x = normalizePercent(portraitFocusXField.value, 50)
+    const y = normalizePercent(portraitFocusYField.value, 35)
+    portraitPreview.style.objectPosition = `${x}% ${y}%`
+  }
+
+  function setPortraitPreviewSource(src) {
+    if (portraitPreviewObjectUrl) URL.revokeObjectURL(portraitPreviewObjectUrl)
+    portraitPreviewObjectUrl = ''
+    portraitPreview.src = src || PLACEHOLDER_PORTRAIT
+  }
+
+  function updatePortraitFocusFromPointer(ev) {
+    const rect = portraitCropFrame.getBoundingClientRect()
+    const x = clamp(((ev.clientX - rect.left) / rect.width) * 100, 0, 100)
+    const y = clamp(((ev.clientY - rect.top) / rect.height) * 100, 0, 100)
+    portraitFocusXField.value = Math.round(x)
+    portraitFocusYField.value = Math.round(y)
+    updatePortraitPreviewPosition()
+  }
 
   portraitPreview.addEventListener('error', ev => {
     ev.currentTarget.src = PLACEHOLDER_PORTRAIT
   }, { once: true })
   removePortraitButton.addEventListener('click', () => {
     markPortraitForRemoval(removePortraitField, portraitUrlField, portraitFileField, removePortraitButton)
-    portraitPreview.src = PLACEHOLDER_PORTRAIT
+    setPortraitPreviewSource(PLACEHOLDER_PORTRAIT)
   })
-  portraitUrlField.addEventListener('input', () => clearPortraitRemoval(removePortraitField, removePortraitButton))
-  portraitFileField.addEventListener('change', () => clearPortraitRemoval(removePortraitField, removePortraitButton))
+  portraitUrlField.addEventListener('input', () => {
+    clearPortraitRemoval(removePortraitField, removePortraitButton)
+    setPortraitPreviewSource(portraitUrlField.value.trim() || person.portrait || PLACEHOLDER_PORTRAIT)
+  })
+  portraitFileField.addEventListener('change', () => {
+    clearPortraitRemoval(removePortraitField, removePortraitButton)
+    const file = portraitFileField.files?.[0]
+    if (!file) return
+    portraitPreviewObjectUrl = URL.createObjectURL(file)
+    portraitPreview.src = portraitPreviewObjectUrl
+  })
+  portraitFocusXField.addEventListener('input', updatePortraitPreviewPosition)
+  portraitFocusYField.addEventListener('input', updatePortraitPreviewPosition)
+  resetPortraitCropButton.addEventListener('click', () => {
+    portraitFocusXField.value = 50
+    portraitFocusYField.value = 50
+    updatePortraitPreviewPosition()
+  })
+  portraitCropFrame.addEventListener('pointerdown', ev => {
+    portraitCropFrame.setPointerCapture(ev.pointerId)
+    updatePortraitFocusFromPointer(ev)
+
+    function move(me) {
+      updatePortraitFocusFromPointer(me)
+    }
+
+    function up() {
+      try {
+        portraitCropFrame.releasePointerCapture(ev.pointerId)
+      } catch (e) {}
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  })
 
   data.people.forEach(other => {
     if (other.id === person.id) return
@@ -411,6 +487,8 @@ function openPersonModal(person) {
       houseId: houseField.value || '',
       description: descriptionField.value.trim(),
       portrait,
+      portraitFocusX: normalizePercent(portraitFocusXField.value, 50),
+      portraitFocusY: normalizePercent(portraitFocusYField.value, 35),
       parents: Array.from(parentsField.selectedOptions).map(o => o.value),
       spouses: Array.from(spouseField.selectedOptions).map(o => o.value),
       spouse: Array.from(spouseField.selectedOptions).map(o => o.value)[0] || null

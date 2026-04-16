@@ -72,14 +72,45 @@
 
     .modal .portraitPreview {
         display: block;
-        width: 140px;
-        height: 140px;
+        width: 100%;
+        height: 100%;
         object-fit: cover;
-        border: 1px solid #d8e0e8;
-        border-radius: 6px;
-        background: #eef2f6;
-        margin: 8px 0;
+        user-select: none;
+        pointer-events: none;
     }
+
+.portraitCropTool {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 12px;
+    align-items: start;
+    margin: 8px 0;
+}
+
+.portraitCropFrame {
+    width: 160px;
+    height: 160px;
+    overflow: hidden;
+    border: 1px solid #d8e0e8;
+    border-radius: 6px;
+    background: #eef2f6;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.portraitCropControls p {
+    margin: 0 0 6px;
+    color: #34495e;
+    font-weight: 700;
+}
+
+.portraitCropControls label {
+    margin: 6px 0;
+}
+
+.portraitCropControls input[type="range"] {
+    padding: 0;
+}
 
 .detailsModal {
     max-width: 980px;

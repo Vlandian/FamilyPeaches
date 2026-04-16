@@ -26,6 +26,8 @@ function normalizePerson(raw, index) {
     legacyHouse: String(raw?.house || '').trim(),
     description: String(raw?.description || '').trim(),
     portrait: String(raw?.portrait || raw?.imageUrl || '').trim(),
+    portraitFocusX: normalizePercent(raw?.portraitFocusX, 50),
+    portraitFocusY: normalizePercent(raw?.portraitFocusY, 35),
     parents: Array.isArray(raw?.parents)
       ? [...new Set(raw.parents.filter(Boolean).map(String))].slice(0, 2)
       : [],

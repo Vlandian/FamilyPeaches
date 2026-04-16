@@ -322,6 +322,23 @@ function getPortraitSrc(person) {
   return person.portrait || PLACEHOLDER_PORTRAIT
 }
 
+function normalizePercent(value, fallback = 50) {
+  const num = Number(value)
+  return Number.isFinite(num) ? clamp(num, 0, 100) : fallback
+}
+
+function getPortraitFocus(person) {
+  return {
+    x: normalizePercent(person?.portraitFocusX, 50),
+    y: normalizePercent(person?.portraitFocusY, 35)
+  }
+}
+
+function getPortraitObjectPosition(person) {
+  const focus = getPortraitFocus(person)
+  return `${focus.x}% ${focus.y}%`
+}
+
 function isDataImage(value) {
   return String(value || '').startsWith('data:image/')
 }
