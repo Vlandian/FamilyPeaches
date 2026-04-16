@@ -24,6 +24,8 @@ let remoteSaveTimer = null
 let remoteSaveInFlight = false
 let remoteSaveQueued = false
 let remoteReloadQueued = false
+let remoteCropRepairQueued = false
+let remoteCropRepairPersonIds = new Set()
 let remoteEntityMode = false
 let remoteSnapshot = normalizeData({ people: [], houses: [] })
 let remotePresenceState = []
@@ -510,10 +512,15 @@ function entitySignature(item) {
   return JSON.stringify(item || {})
 }
 
-function normalizeRemotePeopleRows(rows) {
+function normalizeRemotePeopleRows(rows, fallbackPeople = []) {
+  const fallbackById = new Map((fallbackPeople || []).map(person => [person.id, person]))
+
   return (rows || [])
     .filter(row => row?.id && row?.data)
-    .map((row, index) => normalizePerson({ ...row.data, id: row.id }, index))
+    .map((row, index) => {
+      const rawPerson = { ...row.data, id: row.id }
+      return normalizePerson(preserveMissingPortraitCrop(rawPerson, fallbackById.get(row.id)), index)
+    })
 }
 
 function normalizeRemoteHouseRows(rows) {
@@ -521,6 +528,42 @@ function normalizeRemoteHouseRows(rows) {
     .filter(row => row?.id && row?.data)
     .map((row, index) => normalizeHouse({ ...row.data, id: row.id }, index))
     .filter(house => house.name)
+}
+
+function hasOwnValue(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key)
+}
+
+function hasPortraitCropData(rawPerson) {
+  return (
+    hasOwnValue(rawPerson, 'portraitFocusX') &&
+    hasOwnValue(rawPerson, 'portraitFocusY') &&
+    hasOwnValue(rawPerson, 'portraitZoom')
+  )
+}
+
+function hasMeaningfulPortraitCrop(person) {
+  if (!person) return false
+  return (
+    normalizePercent(person.portraitFocusX, 50) !== 50 ||
+    normalizePercent(person.portraitFocusY, 35) !== 35 ||
+    normalizePortraitZoom(person.portraitZoom, 1) !== 1
+  )
+}
+
+function preserveMissingPortraitCrop(rawPerson, fallbackPerson) {
+  if (!fallbackPerson || hasPortraitCropData(rawPerson) || !hasMeaningfulPortraitCrop(fallbackPerson)) {
+    return rawPerson
+  }
+
+  remoteCropRepairQueued = true
+  if (rawPerson?.id) remoteCropRepairPersonIds.add(String(rawPerson.id))
+  return {
+    ...rawPerson,
+    portraitFocusX: fallbackPerson.portraitFocusX,
+    portraitFocusY: fallbackPerson.portraitFocusY,
+    portraitZoom: fallbackPerson.portraitZoom
+  }
 }
 
 function setRemoteSnapshot(nextData = data) {
@@ -579,6 +622,8 @@ function restoreLocalTree() {
   remoteSaveInFlight = false
   remoteSaveQueued = false
   remoteReloadQueued = false
+  remoteCropRepairQueued = false
+  remoteCropRepairPersonIds.clear()
   remoteDbPresenceAvailable = true
   remotePresenceRows = []
   remoteSnapshot = normalizeData({ people: [], houses: [] })
@@ -661,13 +706,20 @@ async function loadRemoteTree(options = {}) {
   }
 
   remoteEntityMode = true
+  const fallbackPeople = options.preserveViewport || remoteSnapshot.people.length > 0
+    ? data.people
+    : []
   const nextData = normalizeData({
-    people: normalizeRemotePeopleRows(peopleResult.data),
+    people: normalizeRemotePeopleRows(peopleResult.data, fallbackPeople),
     houses: normalizeRemoteHouseRows(housesResult.data)
   })
 
   applyRemoteData(nextData, options)
   setRemoteSnapshot()
+  if (remoteCropRepairQueued) {
+    remoteCropRepairQueued = false
+    repairRemotePortraitCropRows()
+  }
   subscribeRemoteTree()
   return true
 }
@@ -675,7 +727,11 @@ async function loadRemoteTree(options = {}) {
 function applyRemotePersonRow(row) {
   if (!row?.id || !row?.data) return
 
-  const nextPerson = normalizePerson({ ...row.data, id: row.id }, data.people.length)
+  const currentPerson = data.people.find(person => person.id === row.id)
+  const snapshotPerson = remoteSnapshot.people.find(person => person.id === row.id)
+  const fallbackPerson = currentPerson || snapshotPerson
+  const rawPerson = preserveMissingPortraitCrop({ ...row.data, id: row.id }, fallbackPerson)
+  const nextPerson = normalizePerson(rawPerson, data.people.length)
   const currentIndex = data.people.findIndex(person => person.id === nextPerson.id)
 
   if (currentIndex >= 0) {
@@ -736,6 +792,27 @@ function finishRemoteEntityApply() {
   renderAll()
   updateRemoteControls()
   remoteApplying = false
+
+  if (remoteCropRepairQueued) {
+    remoteCropRepairQueued = false
+    repairRemotePortraitCropRows()
+  }
+}
+
+async function repairRemotePortraitCropRows() {
+  if (!supabaseClient || !remoteUser || !remoteCanEdit || remoteCropRepairPersonIds.size === 0) {
+    remoteCropRepairPersonIds.clear()
+    return
+  }
+
+  const ids = new Set(remoteCropRepairPersonIds)
+  remoteCropRepairPersonIds.clear()
+  const people = data.people.filter(person => ids.has(person.id))
+  const error = await upsertEntityRows('tree_people', people)
+
+  if (error) {
+    console.warn('Не удалось восстановить параметры кадрирования портретов:', error.message)
+  }
 }
 
 function shouldDeferRemoteEntityApply() {
@@ -924,7 +1001,8 @@ async function mergeRemotePositionOnlyPeople(changedPeople) {
     const latest = latestById.get(person.id)
     if (!latest) return person
 
-    const mergedPerson = normalizePerson({ ...latest, id: person.id, pos: person.pos }, 0)
+    const rawPerson = preserveMissingPortraitCrop({ ...latest, id: person.id, pos: person.pos }, person)
+    const mergedPerson = normalizePerson(rawPerson, 0)
     if (entitySignature(mergedPerson) !== entitySignature(person)) merged = true
 
     return mergedPerson
@@ -1149,6 +1227,8 @@ async function connectRemoteTree(treeId, email, password, asGuest = false, optio
   remoteSaveInFlight = false
   remoteSaveQueued = false
   remoteReloadQueued = false
+  remoteCropRepairQueued = false
+  remoteCropRepairPersonIds.clear()
   remoteSnapshot = normalizeData({ people: [], houses: [] })
   setRemoteTreeUrl(nextTreeId, !!options.replaceUrl)
 
