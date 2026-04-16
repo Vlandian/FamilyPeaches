@@ -1,7 +1,9 @@
-﻿.link {
+.link {
     stroke: #7f8c8d;
     stroke-width: 3;
     fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .marriage {
@@ -12,4 +14,23 @@
 .parent-link {
     stroke: #2980b9;
     stroke-width: 3;
+}
+
+#parentArrow path {
+    fill: #2980b9;
+}
+
+.relationship-node {
+    fill: #fff;
+    stroke: #5d6d7e;
+    stroke-width: 3;
+}
+
+.spouse-node {
+    stroke: #c0392b;
+}
+
+.parent-node,
+.child-node {
+    stroke: #2980b9;
 }

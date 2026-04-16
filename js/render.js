@@ -117,7 +117,26 @@ function renderGraph() {
     }
   })
 
-  function drawLine(x1, y1, x2, y2, cls) {
+  function ensureRelationshipMarkers() {
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker')
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+
+    marker.setAttribute('id', 'parentArrow')
+    marker.setAttribute('viewBox', '0 0 10 10')
+    marker.setAttribute('refX', '9')
+    marker.setAttribute('refY', '5')
+    marker.setAttribute('markerWidth', '7')
+    marker.setAttribute('markerHeight', '7')
+    marker.setAttribute('orient', 'auto')
+    marker.setAttribute('markerUnits', 'strokeWidth')
+    path.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z')
+    marker.appendChild(path)
+    defs.appendChild(marker)
+    svg.appendChild(defs)
+  }
+
+  function drawLine(x1, y1, x2, y2, cls, options = {}) {
     if (x1 === x2 && y1 === y2) return
 
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
@@ -127,7 +146,18 @@ function renderGraph() {
     line.setAttribute('y2', y2)
     line.classList.add('link')
     if (cls) line.classList.add(cls)
+    if (options.arrow) line.setAttribute('marker-end', 'url(#parentArrow)')
     svg.appendChild(line)
+  }
+
+  function drawNode(x, y, cls) {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+    circle.setAttribute('cx', x)
+    circle.setAttribute('cy', y)
+    circle.setAttribute('r', cls === 'child-node' ? 8 : 7)
+    circle.classList.add('relationship-node')
+    if (cls) circle.classList.add(cls)
+    svg.appendChild(circle)
   }
 
   const personById = new Map(data.people.map(p => [p.id, p]))
@@ -283,26 +313,24 @@ function renderGraph() {
       x: canvasX + CARD_WIDTH / 2,
       y: canvasY + CARD_LINK_Y,
       centerY: canvasY + cardHeight / 2,
+      topY: canvasY,
+      bottomY: canvasY + cardHeight,
       leftX: canvasX,
       rightX: canvasX + CARD_WIDTH
     }
   }
 
-  function childConnectionPoint(childAnchor, startY) {
+  function childConnectionPoint(childAnchor) {
     return {
       x: childAnchor.x,
-      y: childAnchor.y >= startY
-        ? childAnchor.y - CARD_PARENT_OFFSET
-        : childAnchor.y + CARD_PARENT_OFFSET
+      y: childAnchor.topY - 8
     }
   }
 
-  function parentConnectionPoint(parentAnchor, childAnchor) {
+  function parentConnectionPoint(parentAnchor) {
     return {
       x: parentAnchor.x,
-      y: childAnchor.y >= parentAnchor.y
-        ? parentAnchor.y + CARD_PARENT_OFFSET
-        : parentAnchor.y - CARD_PARENT_OFFSET
+      y: parentAnchor.bottomY
     }
   }
 
@@ -326,14 +354,14 @@ function renderGraph() {
 
   function drawOrthogonalLine(start, end, cls) {
     if (start.x === end.x) {
-      drawLine(start.x, start.y, end.x, end.y, cls)
+      drawLine(start.x, start.y, end.x, end.y, cls, { arrow: true })
       return
     }
 
     const busY = Math.round((start.y + end.y) / 2)
     drawLine(start.x, start.y, start.x, busY, cls)
     drawLine(start.x, busY, end.x, busY, cls)
-    drawLine(end.x, busY, end.x, end.y, cls)
+    drawLine(end.x, busY, end.x, end.y, cls, { arrow: true })
   }
 
   function getMarriagePairs() {
@@ -378,12 +406,15 @@ function renderGraph() {
       y,
       leftY: left.centerY,
       rightY: right.centerY,
+      leftNode: { x: x1, y: left.centerY },
+      rightNode: { x: x2, y: right.centerY },
       midX: (x1 + x2) / 2
     }
   }
 
   function redrawLines() {
     svg.innerHTML = ''
+    ensureRelationshipMarkers()
 
     const marriageSegments = new Map()
 
@@ -391,11 +422,14 @@ function renderGraph() {
       const segment = getMarriageSegment(aId, bId)
       if (!segment) return
 
-      if (segment.leftY !== segment.y) {
-        drawLine(segment.x1, segment.leftY, segment.x1, segment.y, 'marriage')
+      drawNode(segment.leftNode.x, segment.leftNode.y, 'spouse-node')
+      drawNode(segment.rightNode.x, segment.rightNode.y, 'spouse-node')
+
+      if (segment.leftNode.y !== segment.y) {
+        drawLine(segment.leftNode.x, segment.leftNode.y, segment.leftNode.x, segment.y, 'marriage')
       }
-      if (segment.rightY !== segment.y) {
-        drawLine(segment.x2, segment.rightY, segment.x2, segment.y, 'marriage')
+      if (segment.rightNode.y !== segment.y) {
+        drawLine(segment.rightNode.x, segment.rightNode.y, segment.rightNode.x, segment.y, 'marriage')
       }
 
       drawLine(segment.x1, segment.y, segment.x2, segment.y, 'marriage')
@@ -412,12 +446,14 @@ function renderGraph() {
 
           const anchor = getAnchor(child.id)
           return anchor
-            ? childConnectionPoint(anchor, segment.y)
+            ? childConnectionPoint(anchor)
             : null
         })
         .filter(Boolean)
 
       if (sharedChildren.length === 0) return
+
+      drawNode(segment.midX, segment.y, 'child-node')
 
       const childrenBySide = [
         sharedChildren.filter(end => end.y >= segment.y),
@@ -434,7 +470,7 @@ function renderGraph() {
         drawLine(minX, busY, maxX, busY, 'parent-link')
 
         childEnds.forEach(end => {
-          drawLine(end.x, busY, end.x, end.y, 'parent-link')
+          drawLine(end.x, busY, end.x, end.y, 'parent-link', { arrow: true })
         })
       })
     })
@@ -450,8 +486,9 @@ function renderGraph() {
         const childAnchor = getAnchor(child.id)
         if (!parentAnchor || !childAnchor) return
 
-        const start = parentConnectionPoint(parentAnchor, childAnchor)
-        const end = childConnectionPoint(childAnchor, start.y)
+        const start = parentConnectionPoint(parentAnchor)
+        const end = childConnectionPoint(childAnchor)
+        drawNode(start.x, start.y, 'parent-node')
         drawOrthogonalLine(start, end, 'parent-link')
       })
     })
