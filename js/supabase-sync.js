@@ -27,10 +27,12 @@ let remoteReloadQueued = false
 let remoteEntityMode = false
 let remoteSnapshot = normalizeData({ people: [], houses: [] })
 let remotePresenceState = []
-let remotePresenceBroadcasts = new Map()
+let remotePresenceRows = []
+let remoteDbPresenceAvailable = true
 let remoteEditingPersonId = ''
 let remotePresenceTimer = null
 let remotePresenceHeartbeatTimer = null
+let remotePresencePollTimer = null
 let remoteMovingPersonIds = new Set()
 const remoteClientId = `client_${uid()}_${Date.now()}`
 const remotePresenceSessionId = (() => {
@@ -47,6 +49,7 @@ const remotePresenceSessionId = (() => {
 })()
 const REMOTE_PRESENCE_TTL = 18000
 const REMOTE_PRESENCE_HEARTBEAT = 5000
+const REMOTE_PRESENCE_POLL = 3000
 let remoteInitialized = false
 
 function getInitialRemoteTreeKey() {
@@ -190,13 +193,12 @@ function collectRealtimePresencePeople() {
   return Object.values(remotePresenceChannel.presenceState()).flat()
 }
 
-function collectBroadcastPresencePeople() {
+function collectDbPresencePeople() {
   const now = Date.now()
   const people = []
 
-  remotePresenceBroadcasts.forEach((person, key) => {
+  remotePresenceRows.forEach(person => {
     if (!person?.at || now - Number(person.at) > REMOTE_PRESENCE_TTL) {
-      remotePresenceBroadcasts.delete(key)
       return
     }
 
@@ -209,7 +211,7 @@ function collectBroadcastPresencePeople() {
 function syncRemotePresenceState() {
   remotePresenceState = normalizeRemotePresence([
     ...collectRealtimePresencePeople(),
-    ...collectBroadcastPresencePeople()
+    ...collectDbPresencePeople()
   ])
 
   renderRemotePresenceList()
@@ -329,41 +331,111 @@ function handleRemotePresenceSync() {
   syncRemotePresenceState()
 }
 
-function handleRemotePresenceBroadcast(person) {
-  if (!person?.clientId || person.clientId === remoteClientId) return
-  const identity = getPresenceIdentity(person)
-  if (!identity || identity === getLocalPresenceIdentity()) return
+function disableRemoteDbPresence(error) {
+  if (!remoteDbPresenceAvailable) return
+  remoteDbPresenceAvailable = false
+  console.warn(
+    'Таблица tree_presence недоступна. Запустите docs/supabase-presence.sql в Supabase SQL Editor:',
+    error?.message || error
+  )
+}
 
-  remotePresenceBroadcasts.set(identity, {
-    ...person,
-    at: Number(person.at || Date.now())
-  })
+function presenceRowToPayload(row) {
+  return {
+    clientId: row.client_id,
+    sessionId: row.session_id,
+    identityKey: row.session_id,
+    name: remoteModeDisplayName(row.mode),
+    mode: row.mode || 'guest',
+    selectedIds: Array.isArray(row.selected_ids) ? row.selected_ids.map(String) : [],
+    editingPersonId: row.editing_person_id || '',
+    editingPersonName: row.editing_person_name || '',
+    at: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+  }
+}
+
+async function upsertRemotePresenceRow(payload) {
+  if (!supabaseClient || !remoteDbPresenceAvailable || !getRemoteTreeId()) return
+
+  const { error } = await supabaseClient
+    .from('tree_presence')
+    .upsert(
+      {
+        tree_id: getRemoteTreeId(),
+        session_id: remotePresenceSessionId,
+        client_id: remoteClientId,
+        mode: payload.mode,
+        selected_ids: payload.selectedIds,
+        editing_person_id: payload.editingPersonId,
+        editing_person_name: payload.editingPersonName,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: 'tree_id,session_id' }
+    )
+
+  if (error) disableRemoteDbPresence(error)
+}
+
+async function fetchRemotePresenceRows() {
+  if (!supabaseClient || !remoteDbPresenceAvailable || !getRemoteTreeId()) return
+
+  const since = new Date(Date.now() - REMOTE_PRESENCE_TTL).toISOString()
+  const { data: rows, error } = await supabaseClient
+    .from('tree_presence')
+    .select('session_id,client_id,mode,selected_ids,editing_person_id,editing_person_name,updated_at')
+    .eq('tree_id', getRemoteTreeId())
+    .gte('updated_at', since)
+
+  if (error) {
+    disableRemoteDbPresence(error)
+    return
+  }
+
+  remotePresenceRows = (rows || []).map(presenceRowToPayload)
   syncRemotePresenceState()
 }
 
+async function removeRemotePresenceRow() {
+  if (!supabaseClient || !remoteDbPresenceAvailable || !getRemoteTreeId()) return
+
+  await supabaseClient
+    .from('tree_presence')
+    .delete()
+    .eq('tree_id', getRemoteTreeId())
+    .eq('session_id', remotePresenceSessionId)
+}
+
 async function trackRemotePresence() {
-  if (!remotePresenceChannel || !isRemoteTreeActive()) return
+  if (!isRemoteTreeActive()) return
   const payload = buildPresencePayload()
-  await remotePresenceChannel.track(payload)
-  await remotePresenceChannel.send({
-    type: 'broadcast',
-    event: 'presence',
-    payload
-  })
+
+  if (remotePresenceChannel) {
+    try {
+      await remotePresenceChannel.track(payload)
+    } catch (error) {
+      console.warn('Не удалось обновить Supabase Presence:', error?.message || error)
+    }
+  }
+
+  await upsertRemotePresenceRow(payload)
   renderRemotePresenceList()
 }
 
 function startRemotePresenceHeartbeat() {
   clearInterval(remotePresenceHeartbeatTimer)
+  clearInterval(remotePresencePollTimer)
   trackRemotePresence()
+  fetchRemotePresenceRows()
+
   remotePresenceHeartbeatTimer = setInterval(() => {
     trackRemotePresence()
-    syncRemotePresenceState()
   }, REMOTE_PRESENCE_HEARTBEAT)
+
+  remotePresencePollTimer = setInterval(fetchRemotePresenceRows, REMOTE_PRESENCE_POLL)
 }
 
 function scheduleRemotePresence() {
-  if (!remotePresenceChannel || !isRemoteTreeActive()) return
+  if (!isRemoteTreeActive()) return
 
   clearTimeout(remotePresenceTimer)
   remotePresenceTimer = setTimeout(trackRemotePresence, 150)
@@ -485,6 +557,8 @@ function restoreLocalTree() {
   remoteSaveInFlight = false
   remoteSaveQueued = false
   remoteReloadQueued = false
+  remoteDbPresenceAvailable = true
+  remotePresenceRows = []
   remoteSnapshot = normalizeData({ people: [], houses: [] })
   remoteApplying = true
   load()
@@ -652,18 +726,14 @@ function subscribeRemoteTree() {
   remotePresenceChannel = supabaseClient
     .channel(`tree-presence-${getRemoteTreeId()}`, {
       config: {
-        broadcast: { self: false },
         presence: { key: remoteClientId }
       }
     })
     .on('presence', { event: 'sync' }, handleRemotePresenceSync)
     .on('presence', { event: 'join' }, handleRemotePresenceSync)
     .on('presence', { event: 'leave' }, handleRemotePresenceSync)
-    .on('broadcast', { event: 'presence' }, message => {
-      handleRemotePresenceBroadcast(message.payload)
-    })
     .subscribe(status => {
-      if (status === 'SUBSCRIBED') startRemotePresenceHeartbeat()
+      if (status === 'SUBSCRIBED') trackRemotePresence()
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         console.warn('Presence-канал Supabase не подключился:', status)
       }
@@ -742,18 +812,22 @@ function subscribeRemoteTree() {
         console.warn('Realtime-канал данных Supabase не подключился:', status)
       }
     })
+
+  startRemotePresenceHeartbeat()
 }
 
 async function unsubscribeRemoteTree() {
   if (!supabaseClient || (!remoteDataChannel && !remotePresenceChannel)) return
   clearTimeout(remotePresenceTimer)
   clearInterval(remotePresenceHeartbeatTimer)
+  clearInterval(remotePresencePollTimer)
+  await removeRemotePresenceRow()
   if (remotePresenceChannel) await supabaseClient.removeChannel(remotePresenceChannel)
   if (remoteDataChannel) await supabaseClient.removeChannel(remoteDataChannel)
   remotePresenceChannel = null
   remoteDataChannel = null
   remotePresenceState = []
-  remotePresenceBroadcasts.clear()
+  remotePresenceRows = []
   renderRemotePresenceList()
   applyRemotePresenceToCards()
 }
