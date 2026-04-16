@@ -19,6 +19,11 @@ let remoteTreeName = ''
 let remoteChannel = null
 let remoteApplying = false
 let remoteSaveTimer = null
+let remoteSaveInFlight = false
+let remoteSaveQueued = false
+let remoteReloadQueued = false
+let remoteEntityMode = false
+let remoteSnapshot = normalizeData({ people: [], houses: [] })
 let remoteInitialized = false
 
 function getInitialRemoteTreeKey() {
@@ -107,15 +112,38 @@ function updateRemoteControls() {
   if (typeof setTreeReadOnly === 'function') setTreeReadOnly(!remoteCanEdit)
 }
 
-function normalizeRemoteTree(row) {
-  remoteTreeVersion = Number(row.version || 0)
-  remoteTreeName = row.name || ''
-  return normalizeData(row.data || { people: [], houses: [] })
+function cloneRemoteData(source = data) {
+  return normalizeData(cloneTreeData(source))
 }
 
-function applyRemoteTree(row) {
+function entityMap(items) {
+  return new Map((items || []).map(item => [String(item.id), item]))
+}
+
+function entitySignature(item) {
+  return JSON.stringify(item || {})
+}
+
+function normalizeRemotePeopleRows(rows) {
+  return (rows || [])
+    .filter(row => row?.id && row?.data)
+    .map((row, index) => normalizePerson({ ...row.data, id: row.id }, index))
+}
+
+function normalizeRemoteHouseRows(rows) {
+  return (rows || [])
+    .filter(row => row?.id && row?.data)
+    .map((row, index) => normalizeHouse({ ...row.data, id: row.id }, index))
+    .filter(house => house.name)
+}
+
+function setRemoteSnapshot(nextData = data) {
+  remoteSnapshot = cloneRemoteData(nextData)
+}
+
+function applyRemoteData(nextData) {
   remoteApplying = true
-  data = normalizeRemoteTree(row)
+  data = normalizeData(nextData)
   repairAllRelationships()
   localStorage.setItem(getActiveStorageKey(), JSON.stringify(data))
   selectedPersonIds.clear()
@@ -125,12 +153,25 @@ function applyRemoteTree(row) {
   remoteApplying = false
 }
 
+function applyLegacyRemoteTree(row) {
+  remoteTreeVersion = Number(row.version || 0)
+  remoteTreeName = row.name || ''
+  remoteEntityMode = false
+  applyRemoteData(row.data || { people: [], houses: [] })
+  setRemoteSnapshot()
+}
+
 function restoreLocalTree() {
   remoteTreeId = ''
   remoteTreeVersion = null
   remoteTreeName = ''
   remoteRole = null
   remoteCanEdit = false
+  remoteEntityMode = false
+  remoteSaveInFlight = false
+  remoteSaveQueued = false
+  remoteReloadQueued = false
+  remoteSnapshot = normalizeData({ people: [], houses: [] })
   remoteApplying = true
   load()
   selectedPersonIds.clear()
@@ -185,9 +226,107 @@ async function loadRemoteTree() {
     return false
   }
 
-  applyRemoteTree(row)
+  remoteTreeVersion = Number(row.version || 0)
+  remoteTreeName = row.name || ''
+
+  const [peopleResult, housesResult] = await Promise.all([
+    supabaseClient
+      .from('tree_people')
+      .select('id,data,updated_at')
+      .eq('tree_id', getRemoteTreeId()),
+    supabaseClient
+      .from('tree_houses')
+      .select('id,data,updated_at')
+      .eq('tree_id', getRemoteTreeId())
+  ])
+
+  if (peopleResult.error || housesResult.error) {
+    console.warn(
+      'Покомпонентные таблицы недоступны, используется старый JSON-режим:',
+      peopleResult.error?.message || housesResult.error?.message
+    )
+    applyLegacyRemoteTree(row)
+    subscribeRemoteTree()
+    return true
+  }
+
+  remoteEntityMode = true
+  const nextData = normalizeData({
+    people: normalizeRemotePeopleRows(peopleResult.data),
+    houses: normalizeRemoteHouseRows(housesResult.data)
+  })
+
+  applyRemoteData(nextData)
+  setRemoteSnapshot()
   subscribeRemoteTree()
   return true
+}
+
+function applyRemotePersonRow(row) {
+  if (!row?.id || !row?.data) return
+
+  const nextPerson = normalizePerson({ ...row.data, id: row.id }, data.people.length)
+  const currentIndex = data.people.findIndex(person => person.id === nextPerson.id)
+
+  if (currentIndex >= 0) {
+    data.people[currentIndex] = nextPerson
+  } else {
+    data.people.push(nextPerson)
+  }
+
+  const snapshotIndex = remoteSnapshot.people.findIndex(person => person.id === nextPerson.id)
+  if (snapshotIndex >= 0) {
+    remoteSnapshot.people[snapshotIndex] = cloneTreeData(nextPerson)
+  } else {
+    remoteSnapshot.people.push(cloneTreeData(nextPerson))
+  }
+}
+
+function applyRemoteHouseRow(row) {
+  if (!row?.id || !row?.data) return
+
+  const nextHouse = normalizeHouse({ ...row.data, id: row.id }, data.houses.length)
+  const currentIndex = data.houses.findIndex(house => house.id === nextHouse.id)
+
+  if (currentIndex >= 0) {
+    data.houses[currentIndex] = nextHouse
+  } else {
+    data.houses.push(nextHouse)
+  }
+
+  const snapshotIndex = remoteSnapshot.houses.findIndex(house => house.id === nextHouse.id)
+  if (snapshotIndex >= 0) {
+    remoteSnapshot.houses[snapshotIndex] = cloneTreeData(nextHouse)
+  } else {
+    remoteSnapshot.houses.push(cloneTreeData(nextHouse))
+  }
+}
+
+function removeRemotePerson(id) {
+  data.people = data.people.filter(person => person.id !== id)
+  data.people.forEach(person => {
+    if (person.spouse === id) person.spouse = null
+    person.parents = person.parents.filter(parentId => parentId !== id)
+  })
+  remoteSnapshot.people = remoteSnapshot.people.filter(person => person.id !== id)
+}
+
+function removeRemoteHouse(id) {
+  data.houses = data.houses.filter(house => house.id !== id)
+  data.people.forEach(person => {
+    if (person.houseId === id) person.houseId = ''
+  })
+  remoteSnapshot.houses = remoteSnapshot.houses.filter(house => house.id !== id)
+}
+
+function finishRemoteEntityApply() {
+  remoteApplying = true
+  repairAllRelationships()
+  localStorage.setItem(getActiveStorageKey(), JSON.stringify(data))
+  selectedPersonIds.clear()
+  renderAll()
+  updateRemoteControls()
+  remoteApplying = false
 }
 
 function subscribeRemoteTree() {
@@ -204,8 +343,61 @@ function subscribeRemoteTree() {
         filter: `id=eq.${getRemoteTreeId()}`
       },
       payload => {
+        if (remoteEntityMode) {
+          if (payload.new?.name) {
+            remoteTreeName = payload.new.name
+            updateRemoteControls()
+          }
+          return
+        }
+
         if (!payload.new || Number(payload.new.version || 0) === remoteTreeVersion) return
-        applyRemoteTree(payload.new)
+        if (remoteSaveInFlight || remoteSaveQueued) return
+        applyLegacyRemoteTree(payload.new)
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'tree_people',
+        filter: `tree_id=eq.${getRemoteTreeId()}`
+      },
+      payload => {
+        if (!remoteEntityMode) return
+        if (remoteSaveInFlight || remoteSaveQueued) {
+          remoteReloadQueued = true
+          return
+        }
+        if (payload.eventType === 'DELETE') {
+          removeRemotePerson(payload.old?.id)
+        } else {
+          applyRemotePersonRow(payload.new)
+        }
+        finishRemoteEntityApply()
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'tree_houses',
+        filter: `tree_id=eq.${getRemoteTreeId()}`
+      },
+      payload => {
+        if (!remoteEntityMode) return
+        if (remoteSaveInFlight || remoteSaveQueued) {
+          remoteReloadQueued = true
+          return
+        }
+        if (payload.eventType === 'DELETE') {
+          removeRemoteHouse(payload.old?.id)
+        } else {
+          applyRemoteHouseRow(payload.new)
+        }
+        finishRemoteEntityApply()
       }
     )
     .subscribe()
@@ -217,18 +409,136 @@ async function unsubscribeRemoteTree() {
   remoteChannel = null
 }
 
+function diffEntities(currentItems, snapshotItems) {
+  const current = entityMap(currentItems)
+  const snapshot = entityMap(snapshotItems)
+  const changed = []
+  const removed = []
+
+  current.forEach((item, id) => {
+    const oldItem = snapshot.get(id)
+    if (!oldItem || entitySignature(item) !== entitySignature(oldItem)) {
+      changed.push(item)
+    }
+  })
+
+  snapshot.forEach((_item, id) => {
+    if (!current.has(id)) removed.push(id)
+  })
+
+  return { changed, removed }
+}
+
 function scheduleRemoteSave() {
-  if (!supabaseClient || !remoteUser || !remoteCanEdit || remoteApplying || remoteTreeVersion === null) return
+  if (!supabaseClient || !remoteUser || !remoteCanEdit || remoteApplying) return
+  if (!remoteEntityMode && remoteTreeVersion === null) return
+
+  if (remoteSaveInFlight) {
+    remoteSaveQueued = true
+    return
+  }
 
   clearTimeout(remoteSaveTimer)
   remoteSaveTimer = setTimeout(saveRemoteTree, 650)
 }
 
-async function saveRemoteTree() {
-  if (!supabaseClient || !remoteUser || !remoteCanEdit || remoteApplying || remoteTreeVersion === null) return
+function finishRemoteSave() {
+  remoteSaveInFlight = false
 
+  if (remoteSaveQueued) {
+    remoteSaveQueued = false
+    scheduleRemoteSave()
+    return
+  }
+
+  if (remoteReloadQueued && remoteEntityMode) {
+    remoteReloadQueued = false
+    loadRemoteTree()
+    return
+  }
+
+  updateRemoteControls()
+}
+
+async function upsertEntityRows(table, items) {
+  if (items.length === 0) return null
+
+  const rows = items.map(item => ({
+    tree_id: getRemoteTreeId(),
+    id: item.id,
+    data: item,
+    updated_at: new Date().toISOString(),
+    updated_by: remoteUser.email
+  }))
+
+  const { error } = await supabaseClient
+    .from(table)
+    .upsert(rows, { onConflict: 'tree_id,id' })
+
+  return error
+}
+
+async function deleteEntityRows(table, ids) {
+  if (ids.length === 0) return null
+
+  const { error } = await supabaseClient
+    .from(table)
+    .delete()
+    .eq('tree_id', getRemoteTreeId())
+    .in('id', ids)
+
+  return error
+}
+
+async function saveRemoteEntities() {
+  const currentData = cloneRemoteData()
+  const peopleDiff = diffEntities(currentData.people, remoteSnapshot.people)
+  const houseDiff = diffEntities(currentData.houses, remoteSnapshot.houses)
+  const hasChanges =
+    peopleDiff.changed.length > 0 ||
+    peopleDiff.removed.length > 0 ||
+    houseDiff.changed.length > 0 ||
+    houseDiff.removed.length > 0
+
+  if (!hasChanges) {
+    finishRemoteSave()
+    return
+  }
+
+  setRemoteStatus('Сохраняю изменения...')
+
+  const errors = await Promise.all([
+    upsertEntityRows('tree_people', peopleDiff.changed),
+    upsertEntityRows('tree_houses', houseDiff.changed),
+    deleteEntityRows('tree_people', peopleDiff.removed),
+    deleteEntityRows('tree_houses', houseDiff.removed)
+  ])
+
+  const error = errors.find(Boolean)
+  if (error) {
+    setRemoteStatus('Ошибка сохранения')
+    alert(error.message || 'Не удалось сохранить изменения.')
+    finishRemoteSave()
+    return
+  }
+
+  await supabaseClient
+    .from('trees')
+    .update({
+      updated_at: new Date().toISOString(),
+      updated_by: remoteUser.email
+    })
+    .eq('id', getRemoteTreeId())
+
+  setRemoteSnapshot(currentData)
+  localStorage.setItem(getActiveStorageKey(), JSON.stringify(currentData))
+  finishRemoteSave()
+}
+
+async function saveLegacyRemoteTree() {
   const nextVersion = remoteTreeVersion + 1
   const payload = cloneTreeData()
+  const expectedVersion = remoteTreeVersion
 
   setRemoteStatus('Сохраняю общее древо...')
 
@@ -241,25 +551,58 @@ async function saveRemoteTree() {
       updated_by: remoteUser.email
     })
     .eq('id', getRemoteTreeId())
-    .eq('version', remoteTreeVersion)
+    .eq('version', expectedVersion)
     .select('id,name,data,version')
 
   if (error) {
     setRemoteStatus('Ошибка сохранения')
     alert(error.message || 'Не удалось сохранить общее древо.')
+    finishRemoteSave()
     return
   }
 
   if (!rows || rows.length === 0) {
-    setRemoteStatus('Древо изменилось у другого пользователя')
-    alert('Древо уже изменилось у другого пользователя. Сейчас загружу свежую версию, чтобы не затереть чужие правки.')
-    await loadRemoteTree()
+    setRemoteStatus('Повторяю сохранение...')
+
+    const { data: currentRow } = await supabaseClient
+      .from('trees')
+      .select('id,name,version')
+      .eq('id', getRemoteTreeId())
+      .single()
+
+    if (currentRow) {
+      remoteTreeVersion = Number(currentRow.version || expectedVersion)
+      remoteTreeName = currentRow.name || remoteTreeName
+    }
+
+    remoteSaveQueued = true
+    finishRemoteSave()
     return
   }
 
   remoteTreeVersion = Number(rows[0].version || nextVersion)
   remoteTreeName = rows[0].name || remoteTreeName
-  updateRemoteControls()
+  setRemoteSnapshot()
+  finishRemoteSave()
+}
+
+async function saveRemoteTree() {
+  if (!supabaseClient || !remoteUser || !remoteCanEdit || remoteApplying) return
+  if (!remoteEntityMode && remoteTreeVersion === null) return
+
+  if (remoteSaveInFlight) {
+    remoteSaveQueued = true
+    return
+  }
+
+  remoteSaveInFlight = true
+  remoteSaveQueued = false
+
+  if (remoteEntityMode) {
+    await saveRemoteEntities()
+  } else {
+    await saveLegacyRemoteTree()
+  }
 }
 
 async function connectRemoteTree(treeId, email, password, asGuest = false) {
@@ -290,6 +633,11 @@ async function connectRemoteTree(treeId, email, password, asGuest = false) {
   remoteTreeName = ''
   remoteRole = asGuest ? 'guest' : null
   remoteCanEdit = false
+  remoteEntityMode = false
+  remoteSaveInFlight = false
+  remoteSaveQueued = false
+  remoteReloadQueued = false
+  remoteSnapshot = normalizeData({ people: [], houses: [] })
 
   if (asGuest) {
     await supabaseClient.auth.signOut()
