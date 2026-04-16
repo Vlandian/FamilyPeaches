@@ -28,6 +28,7 @@ function normalizePerson(raw, index) {
     portrait: String(raw?.portrait || raw?.imageUrl || '').trim(),
     portraitFocusX: normalizePercent(raw?.portraitFocusX, 50),
     portraitFocusY: normalizePercent(raw?.portraitFocusY, 35),
+    portraitZoom: normalizePortraitZoom(raw?.portraitZoom, 1),
     parents: Array.isArray(raw?.parents)
       ? [...new Set(raw.parents.filter(Boolean).map(String))].slice(0, 2)
       : [],

@@ -75,21 +75,23 @@
         width: 100%;
         height: 100%;
         object-fit: cover;
+        transform: scale(var(--portrait-zoom, 1));
+        transform-origin: var(--portrait-focus-x, 50%) var(--portrait-focus-y, 35%);
         user-select: none;
         pointer-events: none;
     }
 
 .portraitCropTool {
     display: grid;
-    grid-template-columns: 160px 1fr;
+    grid-template-columns: 240px 1fr;
     gap: 12px;
     align-items: start;
     margin: 8px 0;
 }
 
 .portraitCropFrame {
-    width: 160px;
-    height: 160px;
+    width: 240px;
+    aspect-ratio: 3 / 2;
     overflow: hidden;
     border: 1px solid #d8e0e8;
     border-radius: 6px;

@@ -327,6 +327,11 @@ function normalizePercent(value, fallback = 50) {
   return Number.isFinite(num) ? clamp(num, 0, 100) : fallback
 }
 
+function normalizePortraitZoom(value, fallback = 1) {
+  const num = Number(value)
+  return Number.isFinite(num) ? clamp(num, 1, 3) : fallback
+}
+
 function getPortraitFocus(person) {
   return {
     x: normalizePercent(person?.portraitFocusX, 50),
@@ -334,9 +339,19 @@ function getPortraitFocus(person) {
   }
 }
 
+function getPortraitZoom(person) {
+  return normalizePortraitZoom(person?.portraitZoom, 1)
+}
+
 function getPortraitObjectPosition(person) {
   const focus = getPortraitFocus(person)
   return `${focus.x}% ${focus.y}%`
+}
+
+function getPortraitCropStyle(person) {
+  const focus = getPortraitFocus(person)
+  const zoom = getPortraitZoom(person)
+  return `object-position: ${focus.x}% ${focus.y}%; --portrait-focus-x: ${focus.x}%; --portrait-focus-y: ${focus.y}%; --portrait-zoom: ${zoom};`
 }
 
 function isDataImage(value) {

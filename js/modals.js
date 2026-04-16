@@ -298,7 +298,7 @@ function openPersonModal(person) {
 
       <div class="portraitCropTool">
         <div class="portraitCropFrame">
-          <img class="portraitPreview" src="${escapeHtml(getPortraitSrc(person))}" alt="Портрет: ${escapeHtml(fullName(person))}" style="object-position: ${escapeHtml(getPortraitObjectPosition(person))}">
+          <img class="portraitPreview" src="${escapeHtml(getPortraitSrc(person))}" alt="Портрет: ${escapeHtml(fullName(person))}" style="${escapeHtml(getPortraitCropStyle(person))}">
         </div>
         <div class="portraitCropControls">
           <p>Кадр для карточки</p>
@@ -307,6 +307,9 @@ function openPersonModal(person) {
           </label>
           <label>Вертикаль
             <input name="portraitFocusY" type="range" min="0" max="100" value="${getPortraitFocus(person).y}">
+          </label>
+          <label>Зум
+            <input name="portraitZoom" type="range" min="100" max="300" value="${Math.round(getPortraitZoom(person) * 100)}">
           </label>
           <button type="button" class="secondaryBtn" id="modalResetPortraitCrop">По центру</button>
         </div>
@@ -363,6 +366,7 @@ function openPersonModal(person) {
   const portraitCropFrame = modal.querySelector('.portraitCropFrame')
   const portraitFocusXField = modal.querySelector('input[name="portraitFocusX"]')
   const portraitFocusYField = modal.querySelector('input[name="portraitFocusY"]')
+  const portraitZoomField = modal.querySelector('input[name="portraitZoom"]')
   const resetPortraitCropButton = modal.querySelector('#modalResetPortraitCrop')
   const spouseField = modal.querySelector('select[name="spouses"]')
   const parentsField = modal.querySelector('select[name="parents"]')
@@ -371,7 +375,11 @@ function openPersonModal(person) {
   function updatePortraitPreviewPosition() {
     const x = normalizePercent(portraitFocusXField.value, 50)
     const y = normalizePercent(portraitFocusYField.value, 35)
+    const zoom = normalizePortraitZoom(Number(portraitZoomField.value) / 100, 1)
     portraitPreview.style.objectPosition = `${x}% ${y}%`
+    portraitPreview.style.setProperty('--portrait-focus-x', `${x}%`)
+    portraitPreview.style.setProperty('--portrait-focus-y', `${y}%`)
+    portraitPreview.style.setProperty('--portrait-zoom', zoom)
   }
 
   function setPortraitPreviewSource(src) {
@@ -409,9 +417,11 @@ function openPersonModal(person) {
   })
   portraitFocusXField.addEventListener('input', updatePortraitPreviewPosition)
   portraitFocusYField.addEventListener('input', updatePortraitPreviewPosition)
+  portraitZoomField.addEventListener('input', updatePortraitPreviewPosition)
   resetPortraitCropButton.addEventListener('click', () => {
     portraitFocusXField.value = 50
     portraitFocusYField.value = 50
+    portraitZoomField.value = 100
     updatePortraitPreviewPosition()
   })
   portraitCropFrame.addEventListener('pointerdown', ev => {
@@ -489,6 +499,7 @@ function openPersonModal(person) {
       portrait,
       portraitFocusX: normalizePercent(portraitFocusXField.value, 50),
       portraitFocusY: normalizePercent(portraitFocusYField.value, 35),
+      portraitZoom: normalizePortraitZoom(Number(portraitZoomField.value) / 100, 1),
       parents: Array.from(parentsField.selectedOptions).map(o => o.value),
       spouses: Array.from(spouseField.selectedOptions).map(o => o.value),
       spouse: Array.from(spouseField.selectedOptions).map(o => o.value)[0] || null

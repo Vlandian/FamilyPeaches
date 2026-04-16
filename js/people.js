@@ -179,6 +179,7 @@ function createBasePerson(pos, overrides = {}) {
     portrait: '',
     portraitFocusX: 50,
     portraitFocusY: 35,
+    portraitZoom: 1,
     parents: [],
     spouses: [],
     spouse: null,

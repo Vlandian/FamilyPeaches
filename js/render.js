@@ -184,7 +184,7 @@ function renderGraph() {
       : ''
     const portraitHtml = `
       <div class="cardPortraitWrap ${p.isAlive ? '' : 'dead'}">
-        <img class="cardPortrait" src="${escapeHtml(getPortraitSrc(p))}" alt="Портрет: ${escapeHtml(fullName(p))}" draggable="false" style="object-position: ${escapeHtml(getPortraitObjectPosition(p))}">
+        <img class="cardPortrait" src="${escapeHtml(getPortraitSrc(p))}" alt="Портрет: ${escapeHtml(fullName(p))}" draggable="false" style="${escapeHtml(getPortraitCropStyle(p))}">
       </div>
     `
     const descriptionHtml = p.description
