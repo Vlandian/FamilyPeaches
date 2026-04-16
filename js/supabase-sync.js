@@ -527,7 +527,25 @@ function setRemoteSnapshot(nextData = data) {
   remoteSnapshot = cloneRemoteData(nextData)
 }
 
-function applyRemoteData(nextData) {
+function getCanvasViewport() {
+  return {
+    left: canvasEl.scrollLeft,
+    top: canvasEl.scrollTop
+  }
+}
+
+function restoreCanvasViewport(viewport) {
+  if (!viewport) return
+
+  requestAnimationFrame(() => {
+    canvasEl.scrollLeft = viewport.left
+    canvasEl.scrollTop = viewport.top
+  })
+}
+
+function applyRemoteData(nextData, options = {}) {
+  const viewport = options.preserveViewport ? getCanvasViewport() : null
+
   remoteApplying = true
   data = normalizeData(nextData)
   repairAllRelationships()
@@ -535,15 +553,19 @@ function applyRemoteData(nextData) {
   selectedPersonIds.clear()
   renderAll()
   updateRemoteControls()
-  requestAnimationFrame(centerViewOnTree)
+  if (viewport) {
+    restoreCanvasViewport(viewport)
+  } else {
+    requestAnimationFrame(centerViewOnTree)
+  }
   remoteApplying = false
 }
 
-function applyLegacyRemoteTree(row) {
+function applyLegacyRemoteTree(row, options = {}) {
   remoteTreeVersion = Number(row.version || 0)
   remoteTreeName = row.name || ''
   remoteEntityMode = false
-  applyRemoteData(row.data || { people: [], houses: [] })
+  applyRemoteData(row.data || { people: [], houses: [] }, options)
   setRemoteSnapshot()
 }
 
@@ -597,7 +619,7 @@ async function refreshRemoteRole() {
   updateRemoteControls()
 }
 
-async function loadRemoteTree() {
+async function loadRemoteTree(options = {}) {
   if (!supabaseClient || !getRemoteTreeId()) return false
 
   setRemoteStatus('Загружаю общее древо...')
@@ -633,7 +655,7 @@ async function loadRemoteTree() {
       'Покомпонентные таблицы недоступны, используется старый JSON-режим:',
       peopleResult.error?.message || housesResult.error?.message
     )
-    applyLegacyRemoteTree(row)
+    applyLegacyRemoteTree(row, options)
     subscribeRemoteTree()
     return true
   }
@@ -644,7 +666,7 @@ async function loadRemoteTree() {
     houses: normalizeRemoteHouseRows(housesResult.data)
   })
 
-  applyRemoteData(nextData)
+  applyRemoteData(nextData, options)
   setRemoteSnapshot()
   subscribeRemoteTree()
   return true
@@ -935,7 +957,7 @@ function finishRemoteSave() {
 
   if (remoteReloadQueued && remoteEntityMode) {
     remoteReloadQueued = false
-    loadRemoteTree()
+    loadRemoteTree({ preserveViewport: true })
     return
   }
 
