@@ -11,10 +11,14 @@ create table if not exists public.trees (
   id uuid primary key default gen_random_uuid(),
   name text not null default 'Общее древо',
   data jsonb not null default '{"people":[],"houses":[]}'::jsonb,
+  is_public boolean not null default true,
   version integer not null default 1,
   updated_at timestamptz not null default now(),
   updated_by text
 );
+
+alter table public.trees
+add column if not exists is_public boolean not null default true;
 
 create table if not exists public.tree_members (
   tree_id uuid not null references public.trees(id) on delete cascade,
@@ -40,6 +44,46 @@ end $$;
 alter table public.trees enable row level security;
 alter table public.tree_members enable row level security;
 
+grant select on public.trees to anon, authenticated;
+grant update on public.trees to authenticated;
+grant select on public.tree_members to authenticated;
+
+create or replace function public.is_tree_member(target_tree_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.tree_members member
+    where member.tree_id = target_tree_id
+      and lower(member.email) = lower(auth.jwt() ->> 'email')
+  );
+$$;
+
+create or replace function public.can_edit_tree(target_tree_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.tree_members member
+    where member.tree_id = target_tree_id
+      and lower(member.email) = lower(auth.jwt() ->> 'email')
+      and member.role in ('owner', 'editor')
+  );
+$$;
+
+revoke all on function public.is_tree_member(uuid) from public;
+revoke all on function public.can_edit_tree(uuid) from public;
+grant execute on function public.is_tree_member(uuid) to anon, authenticated;
+grant execute on function public.can_edit_tree(uuid) to authenticated;
+
 drop policy if exists "Members can read their trees" on public.trees;
 drop policy if exists "Editors can update their trees" on public.trees;
 drop policy if exists "Members can read tree membership" on public.tree_members;
@@ -47,51 +91,21 @@ drop policy if exists "Members can read tree membership" on public.tree_members;
 create policy "Members can read their trees"
 on public.trees
 for select
-to authenticated
-using (
-  exists (
-    select 1
-    from public.tree_members member
-    where member.tree_id = trees.id
-      and lower(member.email) = lower(auth.jwt() ->> 'email')
-  )
-);
+to anon, authenticated
+using (trees.is_public or public.is_tree_member(trees.id));
 
 create policy "Editors can update their trees"
 on public.trees
 for update
 to authenticated
-using (
-  exists (
-    select 1
-    from public.tree_members member
-    where member.tree_id = trees.id
-      and lower(member.email) = lower(auth.jwt() ->> 'email')
-      and member.role in ('owner', 'editor')
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.tree_members member
-    where member.tree_id = trees.id
-      and lower(member.email) = lower(auth.jwt() ->> 'email')
-      and member.role in ('owner', 'editor')
-  )
-);
+using (public.can_edit_tree(trees.id))
+with check (public.can_edit_tree(trees.id));
 
 create policy "Members can read tree membership"
 on public.tree_members
 for select
 to authenticated
-using (
-  exists (
-    select 1
-    from public.tree_members member
-    where member.tree_id = tree_members.tree_id
-      and lower(member.email) = lower(auth.jwt() ->> 'email')
-  )
-);
+using (public.is_tree_member(tree_members.tree_id));
 
 -- Create the first shared tree and owner membership.
 -- Replace owner@example.com before running.

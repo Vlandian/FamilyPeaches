@@ -13,14 +13,21 @@
     <button type="button" id="dataToolsToggle" class="dataToolsToggle" aria-controls="dataToolsPanel" aria-expanded="false">
         Данные
     </button>
+    <button type="button" id="authPanelToggle" class="authPanelToggle" aria-controls="authPanel" aria-expanded="false">
+        Общее древо
+    </button>
 
-    <section id="authPanel" class="authPanel">
+    <section id="authPanel" class="authPanel" hidden>
         <div class="authStatus">
             <span id="remoteStatus">Локальный режим</span>
             <button type="button" id="remoteLogoutBtn" hidden>Выйти</button>
         </div>
 
-        <form id="remoteLoginForm" class="remoteLoginForm" hidden>
+        <form id="remoteLoginForm" class="remoteLoginForm">
+            <label>
+                Ключ древа
+                <input id="remoteTreeKey" autocomplete="off" placeholder="UUID общего древа">
+            </label>
             <label>
                 Email
                 <input id="remoteEmail" type="email" autocomplete="username">
@@ -28,6 +35,10 @@
             <label>
                 Пароль
                 <input id="remotePassword" type="password" autocomplete="current-password">
+            </label>
+            <label class="guestCheck">
+                <input id="remoteGuest" type="checkbox">
+                <span>Гость: только просмотр</span>
             </label>
             <button type="submit">Войти</button>
         </form>

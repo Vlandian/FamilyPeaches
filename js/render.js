@@ -55,8 +55,10 @@
     }
 
     actions.appendChild(show)
-    actions.appendChild(edit)
-    actions.appendChild(del)
+    if (canEditTree()) {
+      actions.appendChild(edit)
+      actions.appendChild(del)
+    }
 
     li.appendChild(main)
     li.appendChild(actions)
@@ -65,6 +67,8 @@
 }
 
 function deletePerson(id) {
+  if (!requireEditPermission()) return
+
   if (
     typeof createBackup === 'function' &&
     !createBackup('Перед удалением персонажа', { quiet: true }) &&
@@ -191,6 +195,7 @@ function renderGraph() {
     card.style.touchAction = 'none'
     card.addEventListener('pointerdown', ev => {
       if (ev.button !== 0) return
+      if (!canEditTree()) return
 
       if (
         ev.target.closest('button') ||

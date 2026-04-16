@@ -120,6 +120,11 @@ function exportCurrentTree() {
 }
 
 function importTreeFromFile(file) {
+  if (!requireEditPermission()) {
+    importJsonFile.value = ''
+    return
+  }
+
   const reader = new FileReader()
 
   reader.onload = () => {
@@ -152,6 +157,8 @@ function importTreeFromFile(file) {
 }
 
 function resetTree() {
+  if (!requireEditPermission()) return
+
   const answer = prompt('Это удалит текущее дерево. Перед сбросом будет создан резерв. Введите СБРОСИТЬ для подтверждения.')
   if (answer !== 'СБРОСИТЬ') return
   if (!ensureBackupBefore('Перед сбросом дерева', 'Сбросить дерево')) return
@@ -161,6 +168,8 @@ function resetTree() {
 }
 
 function restoreBackup(backup) {
+  if (!requireEditPermission()) return
+
   if (!confirm(`Восстановить резерв "${backupTitle(backup)}"? Текущее дерево будет заменено.`)) return
   if (!ensureBackupBefore('Перед восстановлением резерва', 'Восстановить')) return
 
@@ -239,7 +248,7 @@ function renderBackupsList() {
     del.textContent = 'Удалить'
     del.addEventListener('click', () => deleteBackup(backup.id))
 
-    actions.appendChild(restore)
+    if (canEditTree()) actions.appendChild(restore)
     actions.appendChild(download)
     actions.appendChild(del)
     li.appendChild(title)
@@ -252,7 +261,10 @@ function renderBackupsList() {
 dataToolsToggle.addEventListener('click', () => setDataToolsOpen(!dataToolsPanel.classList.contains('open')))
 dataToolsClose.addEventListener('click', () => setDataToolsOpen(false))
 exportJsonBtn.addEventListener('click', exportCurrentTree)
-importJsonBtn.addEventListener('click', () => importJsonFile.click())
+importJsonBtn.addEventListener('click', () => {
+  if (!requireEditPermission()) return
+  importJsonFile.click()
+})
 manualBackupBtn.addEventListener('click', () => {
   if (createBackup('Ручной резерв')) alert('Резервная копия создана.')
 })

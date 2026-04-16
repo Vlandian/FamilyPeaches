@@ -1,7 +1,25 @@
-.authPanel {
+.authPanelToggle {
     position: fixed;
     right: 16px;
     top: 16px;
+    z-index: 34;
+    padding: 9px 12px;
+    border: 0;
+    border-radius: 4px;
+    background: #2c3e50;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.16);
+    cursor: pointer;
+}
+
+    .authPanelToggle:hover {
+        background: #1f2f3d;
+    }
+
+.authPanel {
+    position: fixed;
+    right: 16px;
+    top: 58px;
     z-index: 32;
     width: min(320px, calc(100vw - 32px));
     padding: 10px;
@@ -43,6 +61,25 @@
         border-radius: 4px;
     }
 
+    .remoteLoginForm input:disabled {
+        background: #f4f6f8;
+        color: #7b8792;
+    }
+
+.guestCheck {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+}
+
+    .guestCheck input {
+        width: 16px !important;
+        height: 16px;
+        margin: 0;
+        padding: 0;
+        flex: 0 0 auto;
+    }
+
 .authPanel button {
     padding: 7px 10px;
     border: 0;
@@ -55,3 +92,20 @@
     .authPanel button:hover {
         background: #1f2f3d;
     }
+
+body.readOnlyMode .authPanel {
+    border: 1px solid #d8e0e8;
+}
+
+body.readOnlyMode .panel input:disabled,
+body.readOnlyMode .panel textarea:disabled,
+body.readOnlyMode .panel select:disabled {
+    background: #f4f6f8;
+    color: #6c7782;
+}
+
+body.readOnlyMode #importJsonBtn,
+body.readOnlyMode #resetTreeBtn {
+    opacity: .5;
+    cursor: not-allowed;
+}

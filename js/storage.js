@@ -91,6 +91,10 @@ function load() {
 }
 
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  const storageKey = typeof getActiveStorageKey === 'function'
+    ? getActiveStorageKey()
+    : STORAGE_KEY
+
+  localStorage.setItem(storageKey, JSON.stringify(data))
   if (typeof scheduleRemoteSave === 'function') scheduleRemoteSave()
 }

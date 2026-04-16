@@ -60,6 +60,7 @@ const PLACEHOLDER_CREST = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent
 
 let treeZoom = 1
 const selectedPersonIds = new Set()
+let treeReadOnly = false
 
 function uid() {
   return Math.random().toString(36).slice(2, 9)
@@ -173,6 +174,44 @@ function togglePersonSelection(id) {
 function clearPersonSelection() {
   selectedPersonIds.clear()
   updateCardSelectionClasses()
+}
+
+function canEditTree() {
+  return !treeReadOnly
+}
+
+function requireEditPermission() {
+  if (canEditTree()) return true
+  alert('Это дерево открыто только для просмотра. Войдите под пользователем с правом редактирования.')
+  return false
+}
+
+function updateReadOnlyControls() {
+  const editControlIds = [
+    'houseName',
+    'houseMotto',
+    'houseSeat',
+    'houseDescription',
+    'houseCrestUrl',
+    'houseCrestFile',
+    'addHouseBtn',
+    'cancelHouseEditBtn',
+    'removeHouseCrestBtn',
+    'importJsonBtn',
+    'resetTreeBtn',
+    'importJsonFile'
+  ]
+
+  editControlIds.forEach(id => {
+    const el = document.getElementById(id)
+    if (el) el.disabled = treeReadOnly
+  })
+}
+
+function setTreeReadOnly(readOnly) {
+  treeReadOnly = !!readOnly
+  document.body.classList.toggle('readOnlyMode', treeReadOnly)
+  updateReadOnlyControls()
 }
 
 function getViewportSelectionRect(startX, startY, endX, endY) {

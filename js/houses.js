@@ -48,6 +48,8 @@ function resetHouseForm() {
 }
 
 function startHouseEdit(houseId) {
+  if (!requireEditPermission()) return
+
   const house = getHouse(houseId)
   if (!house) return
 
@@ -140,8 +142,10 @@ function renderHousesList() {
       renderAll()
     })
 
-    actions.appendChild(edit)
-    actions.appendChild(del)
+    if (canEditTree()) {
+      actions.appendChild(edit)
+      actions.appendChild(del)
+    }
 
     li.appendChild(img)
     li.appendChild(text)

@@ -158,6 +158,8 @@ function createBasePerson(pos, overrides = {}) {
 }
 
 function addChildFor(parent) {
+  if (!requireEditPermission()) return
+
   const parents = [parent.id]
   if (parent.spouse && getPerson(parent.spouse)) parents.push(parent.spouse)
 
@@ -176,6 +178,8 @@ function addChildFor(parent) {
 }
 
 function addSpouseFor(person) {
+  if (!requireEditPermission()) return
+
   if (person.spouse && getPerson(person.spouse)) {
     alert('У персонажа уже указан супруг или супруга.')
     return

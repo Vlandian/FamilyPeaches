@@ -45,7 +45,7 @@ function openHouseDetailsModal(houseRef) {
       </div>
 
       <div class="modalActions">
-        <button id="houseDetailsEdit">Редактировать дом</button>
+        ${canEditTree() ? '<button id="houseDetailsEdit">Редактировать дом</button>' : ''}
         <button id="houseDetailsClose">Закрыть</button>
       </div>
     </div>
@@ -62,10 +62,13 @@ function openHouseDetailsModal(houseRef) {
     ev.currentTarget.src = PLACEHOLDER_CREST
   }, { once: true })
 
-  modal.querySelector('#houseDetailsEdit').addEventListener('click', () => {
-    overlay.remove()
-    startHouseEdit(house.id)
-  })
+  const houseDetailsEdit = modal.querySelector('#houseDetailsEdit')
+  if (houseDetailsEdit) {
+    houseDetailsEdit.addEventListener('click', () => {
+      overlay.remove()
+      startHouseEdit(house.id)
+    })
+  }
   modal.querySelector('#houseDetailsClose').addEventListener('click', () => overlay.remove())
   modal.querySelector('.closeBtn').addEventListener('click', () => overlay.remove())
 
@@ -148,9 +151,9 @@ function openPersonDetailsModal(person) {
       </div>
 
       <div class="modalActions">
-        <button id="detailsEdit">Опции</button>
-        <button id="detailsAddChild">Добавить ребёнка</button>
-        <button id="detailsAddSpouse">Добавить супруга</button>
+        ${canEditTree() ? '<button id="detailsEdit">Опции</button>' : ''}
+        ${canEditTree() ? '<button id="detailsAddChild">Добавить ребёнка</button>' : ''}
+        ${canEditTree() ? '<button id="detailsAddSpouse">Добавить супруга</button>' : ''}
         <button id="detailsClose">Закрыть</button>
       </div>
     </div>
@@ -167,18 +170,27 @@ function openPersonDetailsModal(person) {
     ev.currentTarget.src = PLACEHOLDER_PORTRAIT
   }, { once: true })
 
-  modal.querySelector('#detailsEdit').addEventListener('click', () => {
-    overlay.remove()
-    openPersonModal(person)
-  })
-  modal.querySelector('#detailsAddChild').addEventListener('click', () => {
-    overlay.remove()
-    addChildFor(person)
-  })
-  modal.querySelector('#detailsAddSpouse').addEventListener('click', () => {
-    overlay.remove()
-    addSpouseFor(person)
-  })
+  const detailsEdit = modal.querySelector('#detailsEdit')
+  if (detailsEdit) {
+    detailsEdit.addEventListener('click', () => {
+      overlay.remove()
+      openPersonModal(person)
+    })
+  }
+  const detailsAddChild = modal.querySelector('#detailsAddChild')
+  if (detailsAddChild) {
+    detailsAddChild.addEventListener('click', () => {
+      overlay.remove()
+      addChildFor(person)
+    })
+  }
+  const detailsAddSpouse = modal.querySelector('#detailsAddSpouse')
+  if (detailsAddSpouse) {
+    detailsAddSpouse.addEventListener('click', () => {
+      overlay.remove()
+      addSpouseFor(person)
+    })
+  }
   modal.querySelector('#detailsClose').addEventListener('click', () => overlay.remove())
   modal.querySelector('.closeBtn').addEventListener('click', () => overlay.remove())
 
@@ -212,6 +224,8 @@ function openPersonDetailsModal(person) {
 }
 
 function openPersonModal(person) {
+  if (!requireEditPermission()) return
+
   document.querySelectorAll('.modal-overlay').forEach(n => n.remove())
 
   const overlay = document.createElement('div')

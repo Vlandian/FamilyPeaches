@@ -21,6 +21,8 @@ houseCrestFileInput.addEventListener('change', () => {
   clearHouseCrestRemoval()
 })
 addHouseBtn.addEventListener('click', async () => {
+  if (!requireEditPermission()) return
+
   const name = houseNameInput.value.trim()
   const motto = houseMottoInput.value.trim()
   const seat = houseSeatInput.value.trim()
@@ -115,13 +117,19 @@ canvasEl.addEventListener('contextmenu', ev => {
     const person = getPerson(card.dataset.id)
     if (!person) return
 
-    const menu = createContextMenu(ev.clientX, ev.clientY, [
+    const items = [
       { action: 'viewpoint', label: viewpointPersonId === person.id ? 'Убрать точку зрения' : 'Точка зрения' },
-      { action: 'toggleEditor', label: 'Опции' },
-      { action: 'addChild', label: 'Добавить ребёнка' },
-      { action: 'addSpouse', label: 'Добавить супруга' },
-      { action: 'delete', label: 'Удалить' }
-    ])
+      ...(canEditTree()
+        ? [
+            { action: 'toggleEditor', label: 'Опции' },
+            { action: 'addChild', label: 'Добавить ребёнка' },
+            { action: 'addSpouse', label: 'Добавить супруга' },
+            { action: 'delete', label: 'Удалить' }
+          ]
+        : [])
+    ]
+
+    const menu = createContextMenu(ev.clientX, ev.clientY, items)
 
     menu.addEventListener('click', menuEv => {
       const btn = menuEv.target.closest('button')
@@ -136,13 +144,13 @@ canvasEl.addEventListener('contextmenu', ev => {
         } else {
           setViewpointPerson(person.id)
         }
-      } else if (action === 'toggleEditor') {
+      } else if (action === 'toggleEditor' && requireEditPermission()) {
         openPersonModal(person)
-      } else if (action === 'addChild') {
+      } else if (action === 'addChild' && requireEditPermission()) {
         addChildFor(person)
-      } else if (action === 'addSpouse') {
+      } else if (action === 'addSpouse' && requireEditPermission()) {
         addSpouseFor(person)
-      } else if (action === 'delete' && confirm('Удалить персонажа?')) {
+      } else if (action === 'delete' && requireEditPermission() && confirm('Удалить персонажа?')) {
         deletePerson(person.id)
       }
     })
@@ -151,10 +159,14 @@ canvasEl.addEventListener('contextmenu', ev => {
     return
   }
 
-  const menu = createContextMenu(ev.clientX, ev.clientY, [
-    { action: 'new', label: 'Создать нового персонажа здесь' },
+  const items = [
+    ...(canEditTree() ? [{ action: 'new', label: 'Создать нового персонажа здесь' }] : []),
     ...(viewpointPersonId ? [{ action: 'clearViewpoint', label: 'Убрать точку зрения' }] : [])
-  ])
+  ]
+
+  if (items.length === 0) return
+
+  const menu = createContextMenu(ev.clientX, ev.clientY, items)
 
   menu.addEventListener('click', menuEv => {
     const btn = menuEv.target.closest('button')
@@ -168,7 +180,7 @@ canvasEl.addEventListener('contextmenu', ev => {
       return
     }
 
-    if (action !== 'new') return
+    if (action !== 'new' || !requireEditPermission()) return
 
     const worldPoint = getWorldPointFromClient(ev.clientX, ev.clientY)
     const person = createBasePerson(
