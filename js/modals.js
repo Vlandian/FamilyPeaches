@@ -105,7 +105,7 @@ function openPersonDetailsModal(person) {
   document.querySelectorAll('.modal-overlay').forEach(n => n.remove())
 
   const parents = relationshipNames(person.parents || [])
-  const spouse = person.spouse ? getPerson(person.spouse) : null
+  const spouses = relationshipNames(getSpouseIds(person))
   const children = getChildren(person.id).map(displayName)
   const house = getPersonHouse(person)
 
@@ -141,8 +141,8 @@ function openPersonDetailsModal(person) {
             <dl class="relationshipList">
               <dt>Родители</dt>
               <dd>${renderNameList(parents, 'Не указаны')}</dd>
-              <dt>Супруг(а)</dt>
-              <dd>${spouse ? `<span>${escapeHtml(displayName(spouse))}</span>` : '<span class="mutedText">Не указан(а)</span>'}</dd>
+              <dt>Супруги</dt>
+              <dd>${renderNameList(spouses, 'Не указаны')}</dd>
               <dt>Дети</dt>
               <dd>${renderNameList(children, 'Не указаны')}</dd>
             </dl>
@@ -308,9 +308,8 @@ function openPersonModal(person) {
       <input name="removePortrait" type="hidden" value="0">
       <button type="button" class="secondaryBtn" id="modalRemovePortrait">Убрать портрет</button>
 
-      <label>Супруг
-        <select name="spouse">
-          <option value="">-- нет --</option>
+      <label>Супруги (Ctrl/Command)
+        <select name="spouses" multiple size="6">
         </select>
       </label>
 
@@ -346,7 +345,7 @@ function openPersonModal(person) {
   const removePortraitField = modal.querySelector('input[name="removePortrait"]')
   const removePortraitButton = modal.querySelector('#modalRemovePortrait')
   const portraitPreview = modal.querySelector('.portraitPreview')
-  const spouseField = modal.querySelector('select[name="spouse"]')
+  const spouseField = modal.querySelector('select[name="spouses"]')
   const parentsField = modal.querySelector('select[name="parents"]')
 
   portraitPreview.addEventListener('error', ev => {
@@ -373,7 +372,10 @@ function openPersonModal(person) {
     parentsField.appendChild(parentOption)
   })
 
-  spouseField.value = person.spouse || ''
+  const spouseIds = getSpouseIds(person)
+  Array.from(spouseField.options).forEach(option => {
+    option.selected = spouseIds.includes(option.value)
+  })
   Array.from(parentsField.options).forEach(option => {
     option.selected = person.parents.includes(option.value)
   })
@@ -410,7 +412,8 @@ function openPersonModal(person) {
       description: descriptionField.value.trim(),
       portrait,
       parents: Array.from(parentsField.selectedOptions).map(o => o.value),
-      spouse: spouseField.value || null
+      spouses: Array.from(spouseField.selectedOptions).map(o => o.value),
+      spouse: Array.from(spouseField.selectedOptions).map(o => o.value)[0] || null
     }
 
     if (!validatePerson(updated)) return

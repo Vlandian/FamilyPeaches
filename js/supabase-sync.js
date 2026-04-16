@@ -715,7 +715,7 @@ function applyRemoteHouseRow(row) {
 function removeRemotePerson(id) {
   data.people = data.people.filter(person => person.id !== id)
   data.people.forEach(person => {
-    if (person.spouse === id) person.spouse = null
+    setPersonSpouses(person, getSpouseIds(person).filter(spouseId => spouseId !== id))
     person.parents = person.parents.filter(parentId => parentId !== id)
   })
   remoteSnapshot.people = remoteSnapshot.people.filter(person => person.id !== id)

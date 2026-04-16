@@ -1,4 +1,4 @@
-﻿function getPerson(id) {
+function getPerson(id) {
   return data.people.find(p => p.id === id)
 }
 
@@ -8,6 +8,57 @@ function getPeopleMap() {
 
 function uniqueIds(ids) {
   return [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean).map(String))]
+}
+
+function getSpouseIds(person) {
+  return uniqueIds([
+    ...(Array.isArray(person?.spouses) ? person.spouses : []),
+    person?.spouse
+  ])
+}
+
+function setPersonSpouses(person, spouseIds) {
+  if (!person) return
+  person.spouses = uniqueIds(spouseIds).filter(id => id !== person.id)
+  person.spouse = person.spouses[0] || null
+}
+
+function areSpouses(aId, bId) {
+  const a = getPerson(aId)
+  const b = getPerson(bId)
+  return !!a && !!b && getSpouseIds(a).includes(b.id) && getSpouseIds(b).includes(a.id)
+}
+
+function addSpouseLink(personId, spouseId) {
+  const person = getPerson(personId)
+  const spouse = getPerson(spouseId)
+  if (!person || !spouse || person.id === spouse.id) return
+
+  setPersonSpouses(person, [...getSpouseIds(person), spouse.id])
+  setPersonSpouses(spouse, [...getSpouseIds(spouse), person.id])
+}
+
+function removeSpouseLink(personId, spouseId) {
+  const person = getPerson(personId)
+  const spouse = getPerson(spouseId)
+
+  if (person) setPersonSpouses(person, getSpouseIds(person).filter(id => id !== spouseId))
+  if (spouse) setPersonSpouses(spouse, getSpouseIds(spouse).filter(id => id !== personId))
+}
+
+function setSpouseLinks(personId, spouseIds, previousSpouseIds = null) {
+  const person = getPerson(personId)
+  if (!person) return
+
+  const nextIds = uniqueIds(spouseIds)
+  const oldIds = previousSpouseIds ? uniqueIds(previousSpouseIds) : getSpouseIds(person)
+
+  oldIds
+    .filter(id => !nextIds.includes(id))
+    .forEach(id => removeSpouseLink(person.id, id))
+
+  nextIds.forEach(id => addSpouseLink(person.id, id))
+  setPersonSpouses(person, nextIds)
 }
 
 function hasAncestor(personId, ancestorId, map = getPeopleMap()) {
@@ -32,7 +83,8 @@ function createCandidateMap(person) {
   map.set(person.id, {
     ...existing,
     ...person,
-    parents: uniqueIds(person.parents)
+    parents: uniqueIds(person.parents),
+    spouses: getSpouseIds(person)
   })
   return map
 }
@@ -62,66 +114,41 @@ function repairAllRelationships() {
   })
 
   data.people.forEach(person => {
-    if (isInvalidSpouse(person.id, person.spouse, map)) {
-      person.spouse = null
-      return
-    }
+    const spouses = getSpouseIds(person)
+      .filter(spouseId => spouseId !== person.id)
+      .filter(spouseId => map.has(spouseId))
+      .filter(spouseId => !person.parents.includes(spouseId))
+      .filter(spouseId => !isInvalidSpouse(person.id, spouseId, map))
 
-    if (person.spouse && person.parents.includes(person.spouse)) {
-      person.spouse = null
-    }
+    setPersonSpouses(person, spouses)
   })
 
   data.people.forEach(person => {
-    if (!person.spouse) return
-
-    const spouse = map.get(person.spouse)
-    if (!spouse || spouse.spouse === person.id) return
-
-    if (spouse.spouse) {
-      person.spouse = null
-    } else {
-      spouse.spouse = person.id
-    }
-  })
-
-  data.people.forEach(person => {
-    if (person.spouse && map.get(person.spouse)?.spouse !== person.id) {
-      person.spouse = null
-    }
+    getSpouseIds(person).forEach(spouseId => {
+      const spouse = map.get(spouseId)
+      if (!spouse) return
+      if (!getSpouseIds(spouse).includes(person.id)) {
+        setPersonSpouses(spouse, [...getSpouseIds(spouse), person.id])
+      }
+    })
   })
 }
 
 function setReciprocalSpouse(personId, spouseId) {
-  const person = getPerson(personId)
-  const spouse = spouseId ? getPerson(spouseId) : null
-
-  if (!person) return
-
-  data.people.forEach(other => {
-    if (other.id !== personId && other.spouse === personId) {
-      other.spouse = null
-    }
-
-    if (spouse && other.id !== spouse.id && other.spouse === spouse.id) {
-      other.spouse = null
-    }
-  })
-
-  person.spouse = spouse ? spouse.id : null
-
-  if (spouse) {
-    spouse.spouse = person.id
-  }
+  if (!spouseId) return
+  addSpouseLink(personId, spouseId)
 }
 
 function savePerson(person, createPos) {
   const existing = getPerson(person.id)
+  const previousSpouseIds = existing ? getSpouseIds(existing) : []
+  const spouseIds = getSpouseIds(person)
   const next = {
     ...existing,
     ...person,
     parents: uniqueIds(person.parents).slice(0, 2),
-    spouse: person.spouse || null
+    spouses: spouseIds,
+    spouse: spouseIds[0] || null
   }
 
   if (existing) {
@@ -133,7 +160,7 @@ function savePerson(person, createPos) {
     })
   }
 
-  setReciprocalSpouse(next.id, next.spouse)
+  setSpouseLinks(next.id, spouseIds, previousSpouseIds)
   repairAllRelationships()
 }
 
@@ -151,6 +178,7 @@ function createBasePerson(pos, overrides = {}) {
     description: '',
     portrait: '',
     parents: [],
+    spouses: [],
     spouse: null,
     pos,
     ...overrides
@@ -161,7 +189,8 @@ function addChildFor(parent) {
   if (!requireEditPermission()) return
 
   const parents = [parent.id]
-  if (parent.spouse && getPerson(parent.spouse)) parents.push(parent.spouse)
+  const spouses = getSpouseIds(parent).filter(spouseId => getPerson(spouseId))
+  if (spouses.length === 1) parents.push(spouses[0])
 
   const child = createBasePerson(
     {
@@ -180,17 +209,12 @@ function addChildFor(parent) {
 function addSpouseFor(person) {
   if (!requireEditPermission()) return
 
-  if (person.spouse && getPerson(person.spouse)) {
-    alert('У персонажа уже указан супруг или супруга.')
-    return
-  }
-
   const spouse = createBasePerson(
     {
       x: clamp(person.pos.x + 300, WORLD_MIN_X, WORLD_MAX_X - CARD_WIDTH),
       y: clamp(person.pos.y, WORLD_MIN_Y, WORLD_MAX_Y)
     },
-    { spouse: person.id }
+    { spouses: [person.id], spouse: person.id }
   )
 
   savePerson(spouse, spouse.pos)
@@ -221,7 +245,7 @@ function assignExistingParent(parentId, childId) {
     return false
   }
 
-  if (child.spouse === parent.id) {
+  if (getSpouseIds(child).includes(parent.id)) {
     alert('Супруг не может одновременно быть родителем персонажа.')
     return false
   }
@@ -256,13 +280,8 @@ function assignExistingSpouse(personId, spouseId) {
     return false
   }
 
-  if (person.spouse === spouse.id && spouse.spouse === person.id) {
+  if (areSpouses(person.id, spouse.id)) {
     alert('Эти персонажи уже супруги.')
-    return false
-  }
-
-  if ((person.spouse && person.spouse !== spouse.id) || (spouse.spouse && spouse.spouse !== person.id)) {
-    alert('У одного из персонажей уже указан супруг или супруга.')
     return false
   }
 
@@ -276,14 +295,14 @@ function assignExistingSpouse(personId, spouseId) {
     return false
   }
 
-  setReciprocalSpouse(person.id, spouse.id)
+  addSpouseLink(person.id, spouse.id)
   repairAllRelationships()
   save()
   renderAll()
   return true
 }
 
-function setRelationshipOptionAvailability(currentId, parentsEl, spouseEl) {
+function setRelationshipOptionAvailability(currentId, parentsEl, spousesEl) {
   const id = currentId || ''
   const map = getPeopleMap()
 
@@ -296,12 +315,7 @@ function setRelationshipOptionAvailability(currentId, parentsEl, spouseEl) {
     if (invalid) option.selected = false
   })
 
-  Array.from(spouseEl.options).forEach(option => {
-    if (!option.value) {
-      option.disabled = false
-      return
-    }
-
+  Array.from(spousesEl.options).forEach(option => {
     const invalid = !!id && isInvalidSpouse(id, option.value, map)
     option.disabled = invalid
     if (invalid) option.selected = false
@@ -316,9 +330,11 @@ function validatePerson(person) {
 
   const parentIds = Array.isArray(person.parents) ? person.parents.map(String) : []
   const uniqueParentIds = uniqueIds(parentIds)
+  const spouseIds = getSpouseIds(person)
   const map = createCandidateMap({
     ...person,
-    parents: uniqueParentIds
+    parents: uniqueParentIds,
+    spouses: spouseIds
   })
 
   if (uniqueParentIds.length !== parentIds.length) {
@@ -326,7 +342,7 @@ function validatePerson(person) {
     return false
   }
 
-  if (person.parents.length > 2) {
+  if (parentIds.length > 2) {
     alert('У персонажа может быть не больше двух родителей.')
     return false
   }
@@ -357,22 +373,27 @@ function validatePerson(person) {
     }
   }
 
-  if (person.spouse && person.spouse === person.id) {
+  if (spouseIds.length !== uniqueIds(spouseIds).length) {
+    alert('Один и тот же супруг выбран несколько раз.')
+    return false
+  }
+
+  if (spouseIds.includes(person.id)) {
     alert('Нельзя назначить персонажа супругом самому себе.')
     return false
   }
 
-  if (person.spouse && !getPerson(person.spouse)) {
+  if (spouseIds.some(spouseId => !getPerson(spouseId))) {
     alert('Выбранный супруг не найден.')
     return false
   }
 
-  if (person.spouse && uniqueParentIds.includes(person.spouse)) {
+  if (spouseIds.some(spouseId => uniqueParentIds.includes(spouseId))) {
     alert('Супруг не может одновременно быть родителем персонажа.')
     return false
   }
 
-  if (person.spouse && isInvalidSpouse(person.id, person.spouse, map)) {
+  if (spouseIds.some(spouseId => isInvalidSpouse(person.id, spouseId, map))) {
     alert('Нельзя назначить супругом прямого родственника по линии родитель-ребёнок.')
     return false
   }

@@ -80,7 +80,7 @@ function deletePerson(id) {
   data.people = data.people.filter(p => p.id !== id)
 
   data.people.forEach(p => {
-    if (p.spouse === id) p.spouse = null
+    setPersonSpouses(p, getSpouseIds(p).filter(spouseId => spouseId !== id))
     p.parents = p.parents.filter(parentId => parentId !== id)
   })
 
@@ -369,16 +369,16 @@ function renderGraph() {
     const seen = new Set()
 
     data.people.forEach(person => {
-      if (!person.spouse) return
+      getSpouseIds(person).forEach(spouseId => {
+        const spouse = personById.get(spouseId)
+        if (!spouse || !getSpouseIds(spouse).includes(person.id)) return
 
-      const spouse = personById.get(person.spouse)
-      if (!spouse || spouse.spouse !== person.id) return
+        const key = relationshipKey(person.id, spouse.id)
+        if (seen.has(key)) return
 
-      const key = relationshipKey(person.id, spouse.id)
-      if (seen.has(key)) return
-
-      seen.add(key)
-      pairs.push([person.id, spouse.id])
+        seen.add(key)
+        pairs.push([person.id, spouse.id])
+      })
     })
 
     return pairs

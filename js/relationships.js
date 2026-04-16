@@ -164,14 +164,13 @@ function siblingLabel(viewpoint, person) {
 }
 
 function spouseLabel(viewpoint, person) {
-  if (viewpoint.spouse !== person.id && person.spouse !== viewpoint.id) return ''
+  if (!getSpouseIds(viewpoint).includes(person.id) && !getSpouseIds(person).includes(viewpoint.id)) return ''
   return gendered(person, 'муж', 'жена', 'супруг(а)')
 }
 
 function stepParentLabel(viewpoint, person) {
   const parentSpouses = viewpoint.parents
-    .map(parentId => getPerson(parentId)?.spouse)
-    .filter(Boolean)
+    .flatMap(parentId => getSpouseIds(getPerson(parentId)))
 
   if (!viewpoint.parents.includes(person.id) && parentSpouses.includes(person.id)) {
     return gendered(person, 'отчим', 'мачеха', 'приёмный родитель')
@@ -181,9 +180,11 @@ function stepParentLabel(viewpoint, person) {
 }
 
 function stepChildLabel(viewpoint, person) {
-  const spouse = viewpoint.spouse ? getPerson(viewpoint.spouse) : null
-  if (!spouse || person.parents.includes(viewpoint.id)) return ''
-  if (person.parents.includes(spouse.id)) return gendered(person, 'пасынок', 'падчерица', 'приёмный ребёнок')
+  if (person.parents.includes(viewpoint.id)) return ''
+  const spouses = getSpouseIds(viewpoint).map(getPerson).filter(Boolean)
+  if (spouses.some(spouse => person.parents.includes(spouse.id))) {
+    return gendered(person, 'пасынок', 'падчерица', 'приёмный ребёнок')
+  }
   return ''
 }
 

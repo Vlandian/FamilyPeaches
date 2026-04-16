@@ -1,5 +1,11 @@
-﻿function normalizePerson(raw, index) {
+function normalizePerson(raw, index) {
   const isAlive = typeof raw?.isAlive === 'boolean' ? raw.isAlive : !raw?.deathYear
+  const spouses = [
+    ...(Array.isArray(raw?.spouses) ? raw.spouses : []),
+    raw?.spouse
+  ]
+    .filter(Boolean)
+    .map(String)
   const pos =
     raw?.pos &&
     Number.isFinite(Number(raw.pos.x)) &&
@@ -23,7 +29,8 @@
     parents: Array.isArray(raw?.parents)
       ? [...new Set(raw.parents.filter(Boolean).map(String))].slice(0, 2)
       : [],
-    spouse: raw?.spouse ? String(raw.spouse) : null,
+    spouses: [...new Set(spouses)],
+    spouse: spouses[0] || null,
     pos: pos || { x: 20 + (index % 4) * 240, y: 20 + Math.floor(index / 4) * 190 }
   }
 }
