@@ -637,7 +637,7 @@ function applyRemoteData(nextData, options = {}) {
   const peopleBeforeRepair = cloneTreeData(data.people)
   repairAllRelationships()
   queueChangedRemotePeopleRepair(peopleBeforeRepair)
-  localStorage.setItem(getActiveStorageKey(), JSON.stringify(data))
+  safeLocalStorageSet(getActiveStorageKey(), JSON.stringify(data))
   selectedPersonIds.clear()
   renderAll()
   updateRemoteControls()
@@ -666,7 +666,7 @@ function applyRemoteTreeSettings(row) {
 
   data.settings = nextSettings
   remoteSnapshot.settings = cloneTreeData(nextSettings)
-  localStorage.setItem(getActiveStorageKey(), JSON.stringify(data))
+  safeLocalStorageSet(getActiveStorageKey(), JSON.stringify(data))
   renderAll()
 }
 
@@ -849,7 +849,7 @@ function finishRemoteEntityApply() {
   const peopleBeforeRepair = cloneTreeData(data.people)
   repairAllRelationships()
   queueChangedRemotePeopleRepair(peopleBeforeRepair)
-  localStorage.setItem(getActiveStorageKey(), JSON.stringify(data))
+  safeLocalStorageSet(getActiveStorageKey(), JSON.stringify(data))
   renderAll()
   updateRemoteControls()
   remoteApplying = false
@@ -1217,7 +1217,7 @@ async function saveRemoteEntities() {
     updated_by: remoteUser.email
   }
 
-  if (settingsChanged) treeUpdate.data = currentData
+  if (settingsChanged) treeUpdate.data = { settings: currentData.settings }
 
   await supabaseClient
     .from('trees')
@@ -1225,7 +1225,7 @@ async function saveRemoteEntities() {
     .eq('id', getRemoteTreeId())
 
   setRemoteSnapshot(currentData)
-  localStorage.setItem(getActiveStorageKey(), JSON.stringify(currentData))
+  safeLocalStorageSet(getActiveStorageKey(), JSON.stringify(currentData))
   finishRemoteSave()
 }
 

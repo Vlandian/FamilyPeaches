@@ -107,11 +107,29 @@ function load() {
   }
 }
 
+function isStorageQuotaError(error) {
+  return error?.name === 'QuotaExceededError' || error?.code === 22 || error?.code === 1014
+}
+
+function safeLocalStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, value)
+    return true
+  } catch (error) {
+    if (isStorageQuotaError(error)) {
+      console.warn('Браузерное хранилище переполнено, локальный кэш не обновлён:', key)
+      return false
+    }
+
+    throw error
+  }
+}
+
 function save() {
   const storageKey = typeof getActiveStorageKey === 'function'
     ? getActiveStorageKey()
     : STORAGE_KEY
 
-  localStorage.setItem(storageKey, JSON.stringify(data))
+  safeLocalStorageSet(storageKey, JSON.stringify(data))
   if (typeof scheduleRemoteSave === 'function') scheduleRemoteSave()
 }

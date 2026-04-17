@@ -531,16 +531,20 @@ function calculateAgeAtDeath(person) {
 }
 
 function cardLifeMeta(person) {
+  const years = lifeYears(person)
+
   if (!person.isAlive) {
     const ageAtDeath = calculateAgeAtDeath(person)
-    return ageAtDeath !== null ? `Возраст смерти: ${ageAtDeath}` : 'Возраст смерти неизвестен'
+    return ageAtDeath !== null
+      ? `${years} · Возраст смерти: ${ageAtDeath}`
+      : `${years} · Возраст смерти неизвестен`
   }
 
   const age = calculateAge(person)
-  if (age !== null) return `Возраст: ${age}`
-  if (getCurrentTreeYear() !== null) return 'Возраст неизвестен'
+  if (age !== null) return `${years} · Возраст: ${age}`
+  if (getCurrentTreeYear() !== null) return `${years} · Возраст неизвестен`
 
-  return lifeYears(person)
+  return years
 }
 
 function syncCurrentYearControl() {
