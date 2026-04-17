@@ -232,12 +232,12 @@ function renderGraph() {
         ev.target.closest('input') ||
         ev.target.closest('select') ||
         ev.target.closest('textarea') ||
-        ev.target.closest('.cardCrest') ||
-        ev.target.closest('.cardPortraitWrap')
+        ev.target.closest('.cardCrest')
       ) {
         return
       }
 
+      card.dataset.portraitPointer = ev.target.closest('.cardPortraitWrap') ? 'true' : 'false'
       card.setPointerCapture(ev.pointerId)
       const startX = ev.clientX
       const startY = ev.clientY
@@ -292,8 +292,13 @@ function renderGraph() {
           setTimeout(() => {
             cardsContainer.querySelectorAll('.card').forEach(n => {
               delete n.dataset.dragging
+              delete n.dataset.portraitPointer
             })
           }, 0)
+        } else {
+          setTimeout(() => {
+            delete card.dataset.portraitPointer
+          }, 120)
         }
       }
 

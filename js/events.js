@@ -108,13 +108,19 @@ canvasEl.addEventListener('wheel', ev => {
 cardsContainer.addEventListener('click', ev => {
   const card = ev.target.closest('.card')
   if (!card) return
-  if (card.dataset.dragging === 'true') return
+  if (card.dataset.dragging === 'true') {
+    delete card.dataset.portraitPointer
+    return
+  }
 
   const id = card.dataset.id
   const person = getPerson(id)
   if (!person) return
 
-  const portraitClicked = !!ev.target.closest('.cardPortraitWrap, .cardPortrait')
+  const portraitClicked =
+    !!ev.target.closest('.cardPortraitWrap, .cardPortrait') ||
+    card.dataset.portraitPointer === 'true'
+  delete card.dataset.portraitPointer
 
   if (ev.ctrlKey || ev.metaKey) {
     togglePersonSelection(id)
