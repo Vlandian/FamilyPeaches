@@ -475,6 +475,8 @@ function renderGraph() {
       })
     })
 
+    const singleParentChildren = new Map()
+
     data.people.forEach(child => {
       const parents = uniqueIds(child.parents).filter(parentId => personById.has(parentId))
       const sharedPairKey = parents.length === 2 ? relationshipKey(parents[0], parents[1]) : null
@@ -482,14 +484,43 @@ function renderGraph() {
       if (sharedPairKey && marriageSegments.has(sharedPairKey)) return
 
       parents.forEach(parentId => {
-        const parentAnchor = getAnchor(parentId)
         const childAnchor = getAnchor(child.id)
-        if (!parentAnchor || !childAnchor) return
+        if (!childAnchor) return
 
-        const start = parentConnectionPoint(parentAnchor)
-        const end = childConnectionPoint(childAnchor)
-        drawNode(start.x, start.y, 'parent-node')
-        drawOrthogonalLine(start, end, 'parent-link')
+        if (!singleParentChildren.has(parentId)) singleParentChildren.set(parentId, [])
+        singleParentChildren.get(parentId).push(childConnectionPoint(childAnchor))
+      })
+    })
+
+    singleParentChildren.forEach((childEnds, parentId) => {
+      const parentAnchor = getAnchor(parentId)
+      if (!parentAnchor || childEnds.length === 0) return
+
+      const start = parentConnectionPoint(parentAnchor)
+      drawNode(start.x, start.y, 'parent-node')
+
+      const childrenBySide = [
+        childEnds.filter(end => end.y >= start.y),
+        childEnds.filter(end => end.y < start.y)
+      ].filter(group => group.length > 0)
+
+      childrenBySide.forEach(ends => {
+        if (ends.length === 1) {
+          drawOrthogonalLine(start, ends[0], 'parent-link')
+          return
+        }
+
+        const busY = getChildBusY(start.y, ends)
+        const horizontalPoints = [start.x, ...ends.map(end => end.x)]
+        const minX = Math.min(...horizontalPoints)
+        const maxX = Math.max(...horizontalPoints)
+
+        drawLine(start.x, start.y, start.x, busY, 'parent-link')
+        drawLine(minX, busY, maxX, busY, 'parent-link')
+
+        ends.forEach(end => {
+          drawLine(end.x, busY, end.x, end.y, 'parent-link', { arrow: true })
+        })
       })
     })
   }
