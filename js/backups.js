@@ -8,6 +8,8 @@ const exportJsonBtn = document.getElementById('exportJsonBtn')
 const importJsonBtn = document.getElementById('importJsonBtn')
 const importJsonFile = document.getElementById('importJsonFile')
 const manualBackupBtn = document.getElementById('manualBackupBtn')
+const clearRemoteCacheBtn = document.getElementById('clearRemoteCacheBtn')
+const migrateRemoteImagesBtn = document.getElementById('migrateRemoteImagesBtn')
 const resetTreeBtn = document.getElementById('resetTreeBtn')
 const backupsList = document.getElementById('backupsList')
 
@@ -51,7 +53,9 @@ function getBackups() {
 }
 
 function saveBackups(backups) {
-  localStorage.setItem(BACKUP_STORAGE_KEY, JSON.stringify(backups))
+  if (!safeLocalStorageSet(BACKUP_STORAGE_KEY, JSON.stringify(backups))) {
+    throw new Error('Браузерное хранилище переполнено.')
+  }
 }
 
 function backupTitle(backup) {
@@ -117,6 +121,44 @@ function replaceTree(nextData) {
 
 function exportCurrentTree() {
   downloadJson(buildExportPayload(), `peaches-tree-${safeFileDate()}.json`)
+}
+
+function clearRemoteTreeCaches() {
+  const prefixes = [
+    `${STORAGE_KEY}_remote_`,
+    `${STORAGE_KEY}_remote_meta_`
+  ]
+  let removed = 0
+
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i)
+    if (prefixes.some(prefix => key?.startsWith(prefix))) {
+      localStorage.removeItem(key)
+      removed += 1
+    }
+  }
+
+  alert(removed > 0
+    ? `Локальный кэш общих деревьев очищен. Удалено записей: ${removed}.`
+    : 'Локального кэша общих деревьев не найдено.'
+  )
+}
+
+function clearLegacyRemoteTreeDataCaches() {
+  const pattern = new RegExp(`^${STORAGE_KEY}_remote_[0-9a-f-]{36}$`, 'i')
+  let removed = 0
+
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i)
+    if (key && pattern.test(key)) {
+      localStorage.removeItem(key)
+      removed += 1
+    }
+  }
+
+  if (removed > 0) {
+    console.info(`Удалён старый локальный кэш общих деревьев: ${removed}`)
+  }
 }
 
 function importTreeFromFile(file) {
@@ -267,6 +309,10 @@ importJsonBtn.addEventListener('click', () => {
 })
 manualBackupBtn.addEventListener('click', () => {
   if (createBackup('Ручной резерв')) alert('Резервная копия создана.')
+})
+clearRemoteCacheBtn.addEventListener('click', clearRemoteTreeCaches)
+migrateRemoteImagesBtn.addEventListener('click', () => {
+  if (typeof migrateRemoteBase64Images === 'function') migrateRemoteBase64Images()
 })
 resetTreeBtn.addEventListener('click', resetTree)
 importJsonFile.addEventListener('change', () => {

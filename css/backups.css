@@ -72,6 +72,10 @@
     gap: 8px;
 }
 
+    .dataToolsActions #migrateRemoteImagesBtn {
+        grid-column: 1 / -1;
+    }
+
     .dataToolsActions button,
     .backupActions button {
         padding: 8px 10px;

@@ -101,6 +101,23 @@ function getActiveStorageKey() {
   return isRemoteTreeActive() ? `${STORAGE_KEY}_remote_${remoteTreeId}` : STORAGE_KEY
 }
 
+function getRemoteMetaStorageKey(treeId = remoteTreeId) {
+  return `${STORAGE_KEY}_remote_meta_${treeId}`
+}
+
+function persistRemoteTreeMeta(source = data) {
+  if (!isRemoteTreeActive()) return false
+
+  return safeLocalStorageSet(getRemoteMetaStorageKey(), JSON.stringify({
+    treeId: remoteTreeId,
+    treeName: remoteTreeName,
+    role: remoteRole,
+    canEdit: remoteCanEdit,
+    cachedAt: new Date().toISOString(),
+    settings: source?.settings || {}
+  }))
+}
+
 function setRemoteStatus(text) {
   if (remoteStatus) remoteStatus.textContent = text
 }
@@ -267,6 +284,148 @@ function clearStaleSupabaseAuthCache() {
     }
   } catch (error) {
     console.warn('Не удалось очистить старую Supabase-сессию:', error.message)
+  }
+}
+
+function getRemoteAssetsBucket() {
+  return String(SUPABASE_CONFIG?.assetsBucket || '').trim()
+}
+
+function shouldUseRemoteAssetStorage() {
+  return !!(
+    supabaseClient &&
+    remoteUser &&
+    remoteCanEdit &&
+    getRemoteTreeId() &&
+    getRemoteAssetsBucket()
+  )
+}
+
+function dataUrlToBlob(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:([^;,]+)(;base64)?,(.*)$/)
+  if (!match) throw new Error('Неверный формат изображения.')
+
+  const mime = match[1] || 'application/octet-stream'
+  const body = match[2] ? atob(match[3]) : decodeURIComponent(match[3])
+  const bytes = new Uint8Array(body.length)
+  for (let i = 0; i < body.length; i++) bytes[i] = body.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
+function imageExtension(mime) {
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/webp') return 'webp'
+  if (mime === 'image/gif') return 'gif'
+  if (mime === 'image/svg+xml') return 'svg'
+  return 'jpg'
+}
+
+function safeAssetName(value) {
+  return String(value || uid()).replace(/[^a-zA-Z0-9_-]/g, '_')
+}
+
+async function uploadRemoteAssetBlob(blob, options = {}) {
+  if (!shouldUseRemoteAssetStorage()) return ''
+
+  const bucket = getRemoteAssetsBucket()
+  const kind = safeAssetName(options.kind || 'assets')
+  const ownerId = safeAssetName(options.ownerId || uid())
+  const field = safeAssetName(options.field || 'image')
+  const ext = imageExtension(blob.type)
+  const path = `${getRemoteTreeId()}/${kind}/${ownerId}/${field}-${Date.now()}-${uid()}.${ext}`
+
+  const { error } = await supabaseClient
+    .storage
+    .from(bucket)
+    .upload(path, blob, {
+      contentType: blob.type || 'application/octet-stream',
+      upsert: false
+    })
+
+  if (error) {
+    throw new Error(`Не удалось загрузить изображение в Supabase Storage: ${error.message}`)
+  }
+
+  const { data: publicData } = supabaseClient.storage.from(bucket).getPublicUrl(path)
+  return publicData?.publicUrl || ''
+}
+
+async function uploadRemoteImageFile(file, options = {}) {
+  if (!shouldUseRemoteAssetStorage()) return ''
+
+  if (options.resize) {
+    const dataUrl = await readImageAsDataUrl(file)
+    return uploadRemoteAssetBlob(dataUrlToBlob(dataUrl), options)
+  }
+
+  return uploadRemoteAssetBlob(file, options)
+}
+
+async function uploadRemoteImageDataUrl(dataUrl, options = {}) {
+  if (!shouldUseRemoteAssetStorage()) return ''
+  return uploadRemoteAssetBlob(dataUrlToBlob(dataUrl), options)
+}
+
+function countRemoteBase64Images() {
+  const portraitCount = data.people.filter(person => isDataImage(person.portrait)).length
+  const crestCount = (data.houses || []).filter(house => isDataImage(house.crest)).length
+  return { portraitCount, crestCount, total: portraitCount + crestCount }
+}
+
+async function migrateRemoteBase64Images() {
+  if (!isRemoteTreeActive()) {
+    alert('Миграция картинок нужна только для общего дерева.')
+    return
+  }
+
+  if (!remoteCanEdit || !remoteUser) {
+    alert('Переносить картинки в Storage может только редактор общего дерева.')
+    return
+  }
+
+  if (!getRemoteAssetsBucket()) {
+    alert('В supabase-config.js не указан assetsBucket для хранения картинок.')
+    return
+  }
+
+  const counts = countRemoteBase64Images()
+  if (counts.total === 0) {
+    alert('В этом дереве нет встроенных base64-картинок для переноса.')
+    return
+  }
+
+  if (!confirm(`Перенести картинки в Supabase Storage? Портретов: ${counts.portraitCount}, гербов: ${counts.crestCount}.`)) {
+    return
+  }
+
+  try {
+    setRemoteStatus('Переношу картинки в Storage...')
+
+    for (const person of data.people) {
+      if (!isDataImage(person.portrait)) continue
+      person.portrait = await uploadRemoteImageDataUrl(person.portrait, {
+        kind: 'people',
+        ownerId: person.id,
+        field: 'portrait'
+      })
+    }
+
+    for (const house of data.houses || []) {
+      if (!isDataImage(house.crest)) continue
+      house.crest = await uploadRemoteImageDataUrl(house.crest, {
+        kind: 'houses',
+        ownerId: house.id,
+        field: 'crest'
+      })
+    }
+
+    save()
+    renderAll()
+    setRemoteStatus(`Общее древо: редактор${remoteTreeName ? ` · ${remoteTreeName}` : ''}`)
+    alert('Картинки перенесены в Supabase Storage. Из записей дерева теперь сохранены ссылки, а не base64.')
+  } catch (error) {
+    updateRemoteControls()
+    alert(error.message || 'Не удалось перенести картинки в Storage.')
   }
 }
 
@@ -500,6 +659,7 @@ function updateRemoteControls() {
   if (!connected) {
     setRemoteStatus('Локальное древо')
     if (typeof setTreeReadOnly === 'function') setTreeReadOnly(false)
+    if (typeof migrateRemoteImagesBtn !== 'undefined' && migrateRemoteImagesBtn) migrateRemoteImagesBtn.disabled = true
     renderRemotePresenceList()
     return
   }
@@ -513,6 +673,9 @@ function updateRemoteControls() {
   }
 
   if (typeof setTreeReadOnly === 'function') setTreeReadOnly(!remoteCanEdit)
+  if (typeof migrateRemoteImagesBtn !== 'undefined' && migrateRemoteImagesBtn) {
+    migrateRemoteImagesBtn.disabled = !remoteCanEdit
+  }
   renderRemotePresenceList()
 }
 
@@ -653,7 +816,7 @@ function applyRemoteData(nextData, options = {}) {
   const peopleBeforeRepair = cloneTreeData(data.people)
   repairAllRelationships()
   queueChangedRemotePeopleRepair(peopleBeforeRepair)
-  safeLocalStorageSet(getActiveStorageKey(), JSON.stringify(data))
+  persistRemoteTreeMeta(data)
   selectedPersonIds.clear()
   renderAll()
   updateRemoteControls()
@@ -682,7 +845,7 @@ function applyRemoteTreeSettings(row) {
 
   data.settings = nextSettings
   remoteSnapshot.settings = cloneTreeData(nextSettings)
-  safeLocalStorageSet(getActiveStorageKey(), JSON.stringify(data))
+  persistRemoteTreeMeta(data)
   renderAll()
 }
 
@@ -865,7 +1028,7 @@ function finishRemoteEntityApply() {
   const peopleBeforeRepair = cloneTreeData(data.people)
   repairAllRelationships()
   queueChangedRemotePeopleRepair(peopleBeforeRepair)
-  safeLocalStorageSet(getActiveStorageKey(), JSON.stringify(data))
+  persistRemoteTreeMeta(data)
   renderAll()
   updateRemoteControls()
   remoteApplying = false
@@ -1241,7 +1404,7 @@ async function saveRemoteEntities() {
     .eq('id', getRemoteTreeId())
 
   setRemoteSnapshot(currentData)
-  safeLocalStorageSet(getActiveStorageKey(), JSON.stringify(currentData))
+  persistRemoteTreeMeta(currentData)
   finishRemoteSave()
 }
 
@@ -1404,6 +1567,7 @@ async function signOutRemote() {
 async function initializeRemoteSync() {
   if (remoteInitialized) return
   remoteInitialized = true
+  if (typeof clearLegacyRemoteTreeDataCaches === 'function') clearLegacyRemoteTreeDataCaches()
 
   if (remoteTreeKeyInput) remoteTreeKeyInput.value = getInitialRemoteTreeKey()
   syncGuestControls()

@@ -479,7 +479,8 @@ function openPersonModal(person) {
         person.portrait || '',
         portraitUrlField,
         portraitFileField,
-        removePortraitField
+        removePortraitField,
+        { ownerId: person.id }
       )
     } catch (error) {
       alert(error.message)

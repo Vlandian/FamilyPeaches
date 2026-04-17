@@ -202,6 +202,7 @@ function updateReadOnlyControls() {
     'removeHouseCrestBtn',
     'currentYearInput',
     'importJsonBtn',
+    'migrateRemoteImagesBtn',
     'resetTreeBtn',
     'importJsonFile'
   ]
@@ -413,11 +414,23 @@ function readOriginalImageAsDataUrl(file) {
   })
 }
 
-async function getPortraitFromInputs(existingPortrait, urlInput, fileInput, removeInput) {
+async function getPortraitFromInputs(existingPortrait, urlInput, fileInput, removeInput, assetContext = {}) {
   if (removeInput?.checked || removeInput?.value === '1') return ''
 
   const file = fileInput?.files?.[0]
-  if (file) return readImageAsDataUrl(file)
+  if (file) {
+    if (typeof uploadRemoteImageFile === 'function') {
+      const remoteUrl = await uploadRemoteImageFile(file, {
+        ...assetContext,
+        kind: 'people',
+        field: 'portrait',
+        resize: true
+      })
+      if (remoteUrl) return remoteUrl
+    }
+
+    return readImageAsDataUrl(file)
+  }
 
   const url = String(urlInput?.value || '').trim()
   if (url) return url
@@ -425,9 +438,21 @@ async function getPortraitFromInputs(existingPortrait, urlInput, fileInput, remo
   return existingPortrait || ''
 }
 
-async function getOriginalImageFromUrlOrFile(urlInput, fileInput) {
+async function getOriginalImageFromUrlOrFile(urlInput, fileInput, assetContext = {}) {
   const file = fileInput?.files?.[0]
-  if (file) return readOriginalImageAsDataUrl(file)
+  if (file) {
+    if (typeof uploadRemoteImageFile === 'function') {
+      const remoteUrl = await uploadRemoteImageFile(file, {
+        ...assetContext,
+        kind: 'houses',
+        field: 'crest',
+        resize: false
+      })
+      if (remoteUrl) return remoteUrl
+    }
+
+    return readOriginalImageAsDataUrl(file)
+  }
 
   return String(urlInput?.value || '').trim()
 }

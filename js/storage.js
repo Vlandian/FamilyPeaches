@@ -131,6 +131,12 @@ function safeLocalStorageSet(key, value) {
 }
 
 function save() {
+  if (typeof isRemoteTreeActive === 'function' && isRemoteTreeActive()) {
+    if (typeof persistRemoteTreeMeta === 'function') persistRemoteTreeMeta()
+    if (typeof scheduleRemoteSave === 'function') scheduleRemoteSave()
+    return
+  }
+
   const storageKey = typeof getActiveStorageKey === 'function'
     ? getActiveStorageKey()
     : STORAGE_KEY

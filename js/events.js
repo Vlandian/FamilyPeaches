@@ -56,7 +56,9 @@ addHouseBtn.addEventListener('click', async () => {
   let crest = existingHouse?.crest || ''
 
   try {
-    const nextCrest = await getOriginalImageFromUrlOrFile(houseCrestUrlInput, houseCrestFileInput)
+    const nextCrest = await getOriginalImageFromUrlOrFile(houseCrestUrlInput, houseCrestFileInput, {
+      ownerId: editingId || `house_${uid()}`
+    })
     if (removeHouseCrestInput.value === '1') {
       crest = ''
     } else if (nextCrest) {
