@@ -254,6 +254,22 @@ function syncGuestControls() {
   if (remoteSubmitBtn) remoteSubmitBtn.textContent = guest ? 'Смотреть' : 'Войти'
 }
 
+function clearStaleSupabaseAuthCache() {
+  try {
+    const projectRef = new URL(SUPABASE_CONFIG.url).hostname.split('.')[0]
+    const prefixes = [`sb-${projectRef}-auth-token`]
+
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (key === 'supabase.auth.token' || prefixes.some(prefix => key?.startsWith(prefix))) {
+        localStorage.removeItem(key)
+      }
+    }
+  } catch (error) {
+    console.warn('Не удалось очистить старую Supabase-сессию:', error.message)
+  }
+}
+
 function renderRemotePresenceList() {
   if (!remotePresenceList) return
 
@@ -1403,7 +1419,14 @@ async function initializeRemoteSync() {
     return
   }
 
-  supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey)
+  clearStaleSupabaseAuthCache()
+  supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: true,
+      detectSessionInUrl: false
+    }
+  })
 
   remoteGuestInput?.addEventListener('change', syncGuestControls)
 

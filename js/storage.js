@@ -111,13 +111,18 @@ function isStorageQuotaError(error) {
   return error?.name === 'QuotaExceededError' || error?.code === 22 || error?.code === 1014
 }
 
+const storageQuotaWarningKeys = new Set()
+
 function safeLocalStorageSet(key, value) {
   try {
     localStorage.setItem(key, value)
     return true
   } catch (error) {
     if (isStorageQuotaError(error)) {
-      console.warn('Браузерное хранилище переполнено, локальный кэш не обновлён:', key)
+      if (!storageQuotaWarningKeys.has(key)) {
+        storageQuotaWarningKeys.add(key)
+        console.warn('Браузерное хранилище переполнено, локальный кэш не обновлён:', key)
+      }
       return false
     }
 
