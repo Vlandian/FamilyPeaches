@@ -114,6 +114,8 @@ cardsContainer.addEventListener('click', ev => {
   const person = getPerson(id)
   if (!person) return
 
+  const portraitClicked = !!ev.target.closest('.cardPortraitWrap, .cardPortrait')
+
   if (ev.ctrlKey || ev.metaKey) {
     togglePersonSelection(id)
     return
@@ -122,7 +124,7 @@ cardsContainer.addEventListener('click', ev => {
   selectedPersonIds.clear()
   selectedPersonIds.add(id)
   updateCardSelectionClasses()
-  openPersonDetailsModal(person)
+  if (portraitClicked) openPersonDetailsModal(person)
 })
 
 canvasEl.addEventListener('contextmenu', ev => {

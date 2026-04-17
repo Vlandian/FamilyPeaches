@@ -80,6 +80,7 @@
     border: 1px solid #d8e0e8;
     background: #eef2f6;
     margin-bottom: 9px;
+    cursor: pointer;
 }
 
 .cardPortraitWrap.dead .cardPortrait,
