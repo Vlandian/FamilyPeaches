@@ -232,7 +232,8 @@ function renderGraph() {
         ev.target.closest('input') ||
         ev.target.closest('select') ||
         ev.target.closest('textarea') ||
-        ev.target.closest('.cardCrest')
+        ev.target.closest('.cardCrest') ||
+        ev.target.closest('.cardPortraitWrap')
       ) {
         return
       }
