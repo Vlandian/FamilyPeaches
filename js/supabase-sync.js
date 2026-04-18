@@ -4,6 +4,7 @@ const remoteTreeKeyInput = document.getElementById('remoteTreeKey')
 const remoteEmailInput = document.getElementById('remoteEmail')
 const remotePasswordInput = document.getElementById('remotePassword')
 const remoteGuestInput = document.getElementById('remoteGuest')
+const remoteRememberInput = document.getElementById('remoteRemember')
 const remoteLogoutBtn = document.getElementById('remoteLogoutBtn')
 const authPanel = document.getElementById('authPanel')
 const authPanelToggle = document.getElementById('authPanelToggle')
@@ -53,6 +54,8 @@ const REMOTE_PRESENCE_TTL = 18000
 const REMOTE_PRESENCE_HEARTBEAT = 5000
 const REMOTE_PRESENCE_POLL = 3000
 let remoteInitialized = false
+const REMOTE_AUTH_REMEMBER_KEY = 'peaches_remote_remember'
+const REMOTE_LAST_TREE_KEY = 'peaches_last_remote_tree'
 
 function getInitialRemoteTreeKey() {
   return (getUrlRemoteTreeKey() || SUPABASE_CONFIG?.treeId || '').trim()
@@ -268,7 +271,64 @@ function syncGuestControls() {
 
   if (remoteEmailInput) remoteEmailInput.disabled = guest
   if (remotePasswordInput) remotePasswordInput.disabled = guest
+  if (remoteRememberInput) remoteRememberInput.disabled = guest
   if (remoteSubmitBtn) remoteSubmitBtn.textContent = guest ? 'Смотреть' : 'Войти'
+}
+
+function shouldRememberRemoteAuth() {
+  try {
+    return localStorage.getItem(REMOTE_AUTH_REMEMBER_KEY) === '1'
+  } catch (error) {
+    return false
+  }
+}
+
+function setRememberRemoteAuth(remember) {
+  try {
+    if (remember) {
+      localStorage.setItem(REMOTE_AUTH_REMEMBER_KEY, '1')
+    } else {
+      localStorage.removeItem(REMOTE_AUTH_REMEMBER_KEY)
+      localStorage.removeItem(REMOTE_LAST_TREE_KEY)
+    }
+  } catch (error) {}
+
+  if (remoteRememberInput) remoteRememberInput.checked = !!remember
+}
+
+function getRememberedRemoteTreeKey() {
+  try {
+    return shouldRememberRemoteAuth() ? (localStorage.getItem(REMOTE_LAST_TREE_KEY) || '').trim() : ''
+  } catch (error) {
+    return ''
+  }
+}
+
+function setRememberedRemoteTreeKey(treeId) {
+  try {
+    if (shouldRememberRemoteAuth() && treeId) {
+      localStorage.setItem(REMOTE_LAST_TREE_KEY, treeId)
+    }
+  } catch (error) {}
+}
+
+function createRememberingAuthStorage() {
+  return {
+    getItem(key) {
+      if (!shouldRememberRemoteAuth()) return null
+      return localStorage.getItem(key)
+    },
+    setItem(key, value) {
+      if (shouldRememberRemoteAuth()) {
+        safeLocalStorageSet(key, value)
+      } else {
+        localStorage.removeItem(key)
+      }
+    },
+    removeItem(key) {
+      localStorage.removeItem(key)
+    }
+  }
 }
 
 function clearStaleSupabaseAuthCache() {
@@ -1478,6 +1538,27 @@ async function saveRemoteTree() {
   }
 }
 
+async function openRemoteTreeWithUser(user) {
+  remoteUser = user
+  remoteRole = null
+  remoteCanEdit = false
+
+  await refreshRemoteRole()
+
+  const loaded = await loadRemoteTree()
+  if (!loaded) {
+    await supabaseClient.auth.signOut()
+    remoteUser = null
+    restoreLocalTree()
+    return false
+  }
+
+  setRememberedRemoteTreeKey(getRemoteTreeId())
+  if (remotePasswordInput) remotePasswordInput.value = ''
+  updateRemoteControls()
+  return true
+}
+
 async function connectRemoteTree(treeId, email, password, asGuest = false, options = {}) {
   const nextTreeId = String(treeId || '').trim()
 
@@ -1516,13 +1597,15 @@ async function connectRemoteTree(treeId, email, password, asGuest = false, optio
   setRemoteTreeUrl(nextTreeId, !!options.replaceUrl)
 
   if (asGuest) {
-    await supabaseClient.auth.signOut()
+    if (!shouldRememberRemoteAuth()) await supabaseClient.auth.signOut()
     const loaded = await loadRemoteTree()
     if (!loaded) restoreLocalTree()
     if (remotePasswordInput) remotePasswordInput.value = ''
     updateRemoteControls()
     return
   }
+
+  setRememberRemoteAuth(!!remoteRememberInput?.checked)
 
   const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
     email,
@@ -1535,22 +1618,7 @@ async function connectRemoteTree(treeId, email, password, asGuest = false, optio
     return
   }
 
-  remoteUser = authData.user
-  remoteRole = null
-  remoteCanEdit = false
-
-  await refreshRemoteRole()
-
-  const loaded = await loadRemoteTree()
-  if (!loaded) {
-    await supabaseClient.auth.signOut()
-    remoteUser = null
-    restoreLocalTree()
-    return
-  }
-
-  remotePasswordInput.value = ''
-  updateRemoteControls()
+  await openRemoteTreeWithUser(authData.user)
 }
 
 async function signOutRemote() {
@@ -1559,6 +1627,7 @@ async function signOutRemote() {
   clearTimeout(remoteSaveTimer)
   await unsubscribeRemoteTree()
   await supabaseClient.auth.signOut()
+  setRememberRemoteAuth(false)
   clearRemoteTreeUrl()
   remoteUser = null
   restoreLocalTree()
@@ -1583,12 +1652,14 @@ async function initializeRemoteSync() {
     return
   }
 
-  clearStaleSupabaseAuthCache()
+  if (remoteRememberInput) remoteRememberInput.checked = shouldRememberRemoteAuth()
+  if (!shouldRememberRemoteAuth()) clearStaleSupabaseAuthCache()
   supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
     auth: {
-      persistSession: false,
+      persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false
+      detectSessionInUrl: false,
+      storage: createRememberingAuthStorage()
     }
   })
 
@@ -1607,10 +1678,42 @@ async function initializeRemoteSync() {
 
   updateRemoteControls()
 
+  let rememberedUser = null
+  if (shouldRememberRemoteAuth()) {
+    const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession()
+    if (sessionError) {
+      clearStaleSupabaseAuthCache()
+      setRememberRemoteAuth(false)
+    } else {
+      rememberedUser = sessionData?.session?.user || null
+    }
+  }
+
   const urlTreeKey = getUrlRemoteTreeKey()
-  if (urlTreeKey) {
-    if (remoteGuestInput) remoteGuestInput.checked = true
-    syncGuestControls()
-    connectRemoteTree(urlTreeKey, '', '', true, { replaceUrl: true })
+  const rememberedTreeKey = getRememberedRemoteTreeKey()
+  const initialTreeKey = urlTreeKey || rememberedTreeKey
+  if (initialTreeKey) {
+    if (rememberedUser) {
+      if (remoteGuestInput) remoteGuestInput.checked = false
+      syncGuestControls()
+      remoteTreeId = initialTreeKey
+      remoteTreeVersion = null
+      remoteTreeName = ''
+      remoteRole = null
+      remoteCanEdit = false
+      remoteEntityMode = false
+      remoteSaveInFlight = false
+      remoteSaveQueued = false
+      remoteReloadQueued = false
+      remotePersonRepairQueued = false
+      remotePersonRepairIds.clear()
+      remoteSnapshot = normalizeData({ people: [], houses: [] })
+      setRemoteTreeUrl(initialTreeKey, !!urlTreeKey)
+      await openRemoteTreeWithUser(rememberedUser)
+    } else if (urlTreeKey) {
+      if (remoteGuestInput) remoteGuestInput.checked = true
+      syncGuestControls()
+      connectRemoteTree(urlTreeKey, '', '', true, { replaceUrl: true })
+    }
   }
 }
