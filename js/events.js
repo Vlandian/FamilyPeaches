@@ -2,6 +2,7 @@
   syncSelectedPeople()
   syncViewpointPerson()
   syncCurrentYearControl()
+  syncUiThemeControl()
   renderHousesList()
   renderList()
   renderGraph()
@@ -21,6 +22,10 @@ currentYearInput.addEventListener('change', () => {
   data.settings.currentYear = normalizeCurrentYear(currentYearInput.value)
   save()
   renderAll()
+})
+uiThemeSelect.addEventListener('change', () => {
+  setUiTheme(uiThemeSelect.value)
+  syncUiThemeControl()
 })
 cancelHouseEditBtn.addEventListener('click', resetHouseForm)
 removeHouseCrestBtn.addEventListener('click', markHouseCrestForRemoval)

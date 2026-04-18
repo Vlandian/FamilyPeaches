@@ -66,6 +66,8 @@ if (!localStorage.getItem(STORAGE_KEY) && data.people.length === 0) {
   load()
 }
 
+applyUiTheme(getStoredUiTheme())
+
 setTreeWorldSize()
 renderAll()
 if (typeof initializeRemoteSync === 'function') initializeRemoteSync()

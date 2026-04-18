@@ -29,6 +29,8 @@ const panelToggle = document.getElementById('panelToggle')
 const panelClose = document.getElementById('panelClose')
 const peopleSearchInput = document.getElementById('peopleSearch')
 const currentYearInput = document.getElementById('currentYearInput')
+const uiThemeSelect = document.getElementById('uiThemeSelect')
+const UI_THEME_STORAGE_KEY = 'peaches_ui_theme'
 
 const WORLD_WIDTH = 30000
 const WORLD_HEIGHT = 30000
@@ -187,6 +189,38 @@ function requireEditPermission() {
   if (canEditTree()) return true
   alert('Это дерево открыто только для просмотра. Войдите под пользователем с правом редактирования.')
   return false
+}
+
+function normalizeUiTheme(value) {
+  return value === 'dark' ? 'dark' : 'light'
+}
+
+function getStoredUiTheme() {
+  try {
+    return normalizeUiTheme(localStorage.getItem(UI_THEME_STORAGE_KEY))
+  } catch (error) {
+    return 'light'
+  }
+}
+
+function applyUiTheme(theme) {
+  const normalized = normalizeUiTheme(theme)
+  document.body.classList.toggle('theme-dark', normalized === 'dark')
+  document.documentElement.style.colorScheme = normalized === 'dark' ? 'dark' : 'light'
+}
+
+function setUiTheme(theme) {
+  const normalized = normalizeUiTheme(theme)
+  applyUiTheme(normalized)
+
+  try {
+    localStorage.setItem(UI_THEME_STORAGE_KEY, normalized)
+  } catch (error) {}
+}
+
+function syncUiThemeControl() {
+  if (!uiThemeSelect) return
+  uiThemeSelect.value = getStoredUiTheme()
 }
 
 function updateReadOnlyControls() {

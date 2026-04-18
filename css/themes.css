@@ -1,0 +1,202 @@
+body.theme-dark {
+    background: #101418;
+    color: #dfe7ee;
+}
+
+body.theme-dark .canvas {
+    background: #0f1317;
+}
+
+body.theme-dark .panel,
+body.theme-dark .authPanel,
+body.theme-dark .dataToolsPanel,
+body.theme-dark .modal,
+body.theme-dark .context-menu,
+body.theme-dark .card {
+    background: #171d23;
+    color: #dfe7ee;
+    border-color: #34414d;
+    box-shadow: 0 8px 24px rgba(0,0,0,.42);
+}
+
+body.theme-dark .panelToggle,
+body.theme-dark .authPanelToggle,
+body.theme-dark .dataToolsToggle,
+body.theme-dark .panel button,
+body.theme-dark .authPanel button,
+body.theme-dark .modalActions button,
+body.theme-dark .dataToolsHeader button,
+body.theme-dark .modal button:not(.closeBtn) {
+    background: #36526a;
+    color: #f5f8fb;
+}
+
+body.theme-dark .panelToggle:hover,
+body.theme-dark .authPanelToggle:hover,
+body.theme-dark .dataToolsToggle:hover,
+body.theme-dark .panel button:hover,
+body.theme-dark .authPanel button:hover,
+body.theme-dark .modalActions button:hover,
+body.theme-dark .dataToolsHeader button:hover,
+body.theme-dark .modal button:not(.closeBtn):hover {
+    background: #42627c;
+}
+
+body.theme-dark input,
+body.theme-dark select,
+body.theme-dark textarea,
+body.theme-dark .panel input,
+body.theme-dark .panel select,
+body.theme-dark .panel textarea,
+body.theme-dark .remoteLoginForm input,
+body.theme-dark .modal input,
+body.theme-dark .modal select,
+body.theme-dark .modal textarea {
+    background: #10161c;
+    color: #e7eef5;
+    border-color: #3a4652;
+}
+
+body.theme-dark input::placeholder,
+body.theme-dark textarea::placeholder {
+    color: #7f8b96;
+}
+
+body.theme-dark input:disabled,
+body.theme-dark select:disabled,
+body.theme-dark textarea:disabled,
+body.theme-dark .remoteLoginForm input:disabled {
+    background: #202831;
+    color: #7f8b96;
+}
+
+body.theme-dark .card:hover {
+    border-color: #6e98bd;
+    box-shadow: 0 8px 20px rgba(0,0,0,.45);
+}
+
+body.theme-dark .cardPortraitWrap,
+body.theme-dark .detailsPortraitFrame,
+body.theme-dark .portraitCropFrame,
+body.theme-dark .detailsCrest,
+body.theme-dark .houseItemCrest {
+    background: #202832;
+    border-color: #3a4652;
+}
+
+body.theme-dark .card h3,
+body.theme-dark .detailsTitle h2,
+body.theme-dark .dataToolsHeader h2,
+body.theme-dark .panelHeader h1,
+body.theme-dark .panel h2,
+body.theme-dark .dataToolsPanel h3,
+body.theme-dark .modal h3,
+body.theme-dark .modal h4,
+body.theme-dark .backupTitle,
+body.theme-dark .remotePresenceTitle,
+body.theme-dark .houseDetailsStack h2 {
+    color: #f2f6fa;
+}
+
+body.theme-dark .cardMeta,
+body.theme-dark .cardHouse,
+body.theme-dark .cardDescription,
+body.theme-dark .backupMeta,
+body.theme-dark .dataToolsNote,
+body.theme-dark .authStatus span,
+body.theme-dark .remoteLoginForm label,
+body.theme-dark .remotePresenceItem,
+body.theme-dark .detailsMeta,
+body.theme-dark .detailsSection p,
+body.theme-dark .detailsSection dd,
+body.theme-dark .houseItemMeta,
+body.theme-dark .personMeta,
+body.theme-dark .mutedText {
+    color: #a9b5bf;
+}
+
+body.theme-dark .settingsPanel,
+body.theme-dark .remotePresenceList,
+body.theme-dark .modal-header,
+body.theme-dark .personItem,
+body.theme-dark .houseItem,
+body.theme-dark .backupItem {
+    border-color: #2e3944;
+}
+
+body.theme-dark .houseItem {
+    background: #12181e;
+}
+
+body.theme-dark .panel .secondaryBtn,
+body.theme-dark .modal .secondaryBtn,
+body.theme-dark .dataToolsActions button,
+body.theme-dark .backupActions button {
+    background: #24313c;
+    color: #e7eef5;
+}
+
+body.theme-dark .panel .secondaryBtn:hover,
+body.theme-dark .modal .secondaryBtn:hover,
+body.theme-dark .dataToolsActions button:hover,
+body.theme-dark .backupActions button:hover {
+    background: #30404e;
+}
+
+body.theme-dark .dataToolsActions .dangerBtn {
+    background: #563034;
+    color: #ffd9dd;
+}
+
+body.theme-dark .dataToolsActions .dangerBtn:hover {
+    background: #6a3a3f;
+}
+
+body.theme-dark .statusPill.alive {
+    background: #193d2c;
+    color: #9be0b6;
+}
+
+body.theme-dark .statusPill.dead {
+    background: #4d2528;
+    color: #f0a5a9;
+}
+
+body.theme-dark .cardTitle {
+    color: #d7a84d;
+}
+
+body.theme-dark .context-menu button {
+    color: #e7eef5;
+}
+
+body.theme-dark .context-menu button:hover {
+    background: #24313c;
+}
+
+body.theme-dark .modal-overlay {
+    background: rgba(0,0,0,.66);
+}
+
+body.theme-dark .marriage {
+    stroke: #e06a5f;
+}
+
+body.theme-dark .parent-link {
+    stroke: #5da9e9;
+}
+
+body.theme-dark #parentArrow path {
+    fill: #5da9e9;
+}
+
+body.theme-dark .parent-node,
+body.theme-dark .child-node {
+    fill: #5da9e9;
+    stroke: #5da9e9;
+}
+
+body.theme-dark .spouse-node {
+    fill: #e06a5f;
+    stroke: #e06a5f;
+}
