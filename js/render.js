@@ -68,6 +68,7 @@
 
 function deletePerson(id) {
   if (!requireEditPermission()) return
+  const removedPerson = getPerson(id)
 
   if (
     typeof createBackup === 'function' &&
@@ -77,6 +78,7 @@ function deletePerson(id) {
     return
   }
 
+  if (typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(removedPerson?.portrait)
   data.people = data.people.filter(p => p.id !== id)
 
   data.people.forEach(p => {

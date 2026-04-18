@@ -10,6 +10,7 @@ const importJsonFile = document.getElementById('importJsonFile')
 const manualBackupBtn = document.getElementById('manualBackupBtn')
 const clearRemoteCacheBtn = document.getElementById('clearRemoteCacheBtn')
 const migrateRemoteImagesBtn = document.getElementById('migrateRemoteImagesBtn')
+const cleanupRemoteAssetsBtn = document.getElementById('cleanupRemoteAssetsBtn')
 const resetTreeBtn = document.getElementById('resetTreeBtn')
 const backupsList = document.getElementById('backupsList')
 
@@ -313,6 +314,9 @@ manualBackupBtn.addEventListener('click', () => {
 clearRemoteCacheBtn.addEventListener('click', clearRemoteTreeCaches)
 migrateRemoteImagesBtn.addEventListener('click', () => {
   if (typeof migrateRemoteBase64Images === 'function') migrateRemoteBase64Images()
+})
+cleanupRemoteAssetsBtn.addEventListener('click', () => {
+  if (typeof cleanupUnusedRemoteAssets === 'function') cleanupUnusedRemoteAssets()
 })
 resetTreeBtn.addEventListener('click', resetTree)
 importJsonFile.addEventListener('change', () => {

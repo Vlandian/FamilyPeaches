@@ -72,7 +72,8 @@
     gap: 8px;
 }
 
-    .dataToolsActions #migrateRemoteImagesBtn {
+    .dataToolsActions #migrateRemoteImagesBtn,
+    .dataToolsActions #cleanupRemoteAssetsBtn {
         grid-column: 1 / -1;
     }
 

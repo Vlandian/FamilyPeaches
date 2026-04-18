@@ -203,6 +203,7 @@ function updateReadOnlyControls() {
     'currentYearInput',
     'importJsonBtn',
     'migrateRemoteImagesBtn',
+    'cleanupRemoteAssetsBtn',
     'resetTreeBtn',
     'importJsonFile'
   ]
@@ -415,7 +416,10 @@ function readOriginalImageAsDataUrl(file) {
 }
 
 async function getPortraitFromInputs(existingPortrait, urlInput, fileInput, removeInput, assetContext = {}) {
-  if (removeInput?.checked || removeInput?.value === '1') return ''
+  if (removeInput?.checked || removeInput?.value === '1') {
+    if (typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(existingPortrait)
+    return ''
+  }
 
   const file = fileInput?.files?.[0]
   if (file) {
@@ -426,19 +430,28 @@ async function getPortraitFromInputs(existingPortrait, urlInput, fileInput, remo
         field: 'portrait',
         resize: true
       })
-      if (remoteUrl) return remoteUrl
+      if (remoteUrl) {
+        if (typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(existingPortrait, remoteUrl)
+        return remoteUrl
+      }
     }
 
-    return readImageAsDataUrl(file)
+    const dataUrl = await readImageAsDataUrl(file)
+    if (typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(existingPortrait, dataUrl)
+    return dataUrl
   }
 
   const url = String(urlInput?.value || '').trim()
-  if (url) return url
+  if (url) {
+    if (typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(existingPortrait, url)
+    return url
+  }
 
   return existingPortrait || ''
 }
 
 async function getOriginalImageFromUrlOrFile(urlInput, fileInput, assetContext = {}) {
+  const existingAsset = assetContext.existingAsset || ''
   const file = fileInput?.files?.[0]
   if (file) {
     if (typeof uploadRemoteImageFile === 'function') {
@@ -448,13 +461,20 @@ async function getOriginalImageFromUrlOrFile(urlInput, fileInput, assetContext =
         field: 'crest',
         resize: false
       })
-      if (remoteUrl) return remoteUrl
+      if (remoteUrl) {
+        if (typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(existingAsset, remoteUrl)
+        return remoteUrl
+      }
     }
 
-    return readOriginalImageAsDataUrl(file)
+    const dataUrl = await readOriginalImageAsDataUrl(file)
+    if (typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(existingAsset, dataUrl)
+    return dataUrl
   }
 
-  return String(urlInput?.value || '').trim()
+  const url = String(urlInput?.value || '').trim()
+  if (url && typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(existingAsset, url)
+  return url
 }
 
 function markPortraitForRemoval(hiddenInput, urlInput, fileInput, button) {

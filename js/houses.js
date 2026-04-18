@@ -131,6 +131,7 @@ function renderHousesList() {
         return
       }
 
+      if (typeof queueRemoteAssetDeletion === 'function') queueRemoteAssetDeletion(house.crest)
       data.houses = data.houses.filter(item => item.id !== house.id)
       data.people.forEach(person => {
         if (person.houseId === house.id) person.houseId = ''

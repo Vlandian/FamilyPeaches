@@ -37,6 +37,7 @@ let remotePresenceTimer = null
 let remotePresenceHeartbeatTimer = null
 let remotePresencePollTimer = null
 let remoteMovingPersonIds = new Set()
+let pendingRemoteAssetDeletePaths = new Set()
 const remoteClientId = `client_${uid()}_${Date.now()}`
 const remotePresenceSessionId = (() => {
   try {
@@ -426,6 +427,160 @@ async function uploadRemoteImageDataUrl(dataUrl, options = {}) {
   return uploadRemoteAssetBlob(dataUrlToBlob(dataUrl), options)
 }
 
+function getRemoteAssetPathFromUrl(url) {
+  const bucket = getRemoteAssetsBucket()
+  if (!bucket || !url) return ''
+
+  try {
+    const parsed = new URL(url)
+    const publicMarker = `/storage/v1/object/public/${bucket}/`
+    const signedMarker = `/storage/v1/object/sign/${bucket}/`
+    let index = parsed.pathname.indexOf(publicMarker)
+    let marker = publicMarker
+
+    if (index < 0) {
+      index = parsed.pathname.indexOf(signedMarker)
+      marker = signedMarker
+    }
+
+    if (index < 0) return ''
+
+    const path = decodeURIComponent(parsed.pathname.slice(index + marker.length))
+    return path.startsWith(`${getRemoteTreeId()}/`) ? path : ''
+  } catch (error) {
+    return ''
+  }
+}
+
+function queueRemoteAssetDeletion(oldUrl, nextUrl = '') {
+  const oldPath = getRemoteAssetPathFromUrl(oldUrl)
+  if (!oldPath) return
+
+  const nextPath = getRemoteAssetPathFromUrl(nextUrl)
+  if (oldPath === nextPath) return
+
+  pendingRemoteAssetDeletePaths.add(oldPath)
+}
+
+function collectReferencedRemoteAssetPaths(source = data) {
+  const paths = new Set()
+
+  ;(source.people || []).forEach(person => {
+    const path = getRemoteAssetPathFromUrl(person.portrait)
+    if (path) paths.add(path)
+  })
+
+  ;(source.houses || []).forEach(house => {
+    const path = getRemoteAssetPathFromUrl(house.crest)
+    if (path) paths.add(path)
+  })
+
+  return paths
+}
+
+async function removeRemoteAssetPaths(paths) {
+  if (!shouldUseRemoteAssetStorage() || paths.length === 0) return null
+
+  const bucket = getRemoteAssetsBucket()
+  for (let i = 0; i < paths.length; i += 100) {
+    const chunk = paths.slice(i, i + 100)
+    const { error } = await supabaseClient.storage.from(bucket).remove(chunk)
+    if (error) return error
+  }
+
+  return null
+}
+
+async function processPendingRemoteAssetDeletes(source = data) {
+  if (pendingRemoteAssetDeletePaths.size === 0) return
+
+  const referenced = collectReferencedRemoteAssetPaths(source)
+  const paths = Array.from(pendingRemoteAssetDeletePaths)
+    .filter(path => !referenced.has(path))
+
+  pendingRemoteAssetDeletePaths.clear()
+  const error = await removeRemoteAssetPaths(paths)
+  if (error) {
+    paths.forEach(path => pendingRemoteAssetDeletePaths.add(path))
+    console.warn('Не удалось удалить старые картинки из Storage:', error.message)
+  }
+}
+
+async function listRemoteAssetPaths(prefix = getRemoteTreeId()) {
+  if (!shouldUseRemoteAssetStorage()) return []
+
+  const bucket = getRemoteAssetsBucket()
+  const { data: items, error } = await supabaseClient.storage.from(bucket).list(prefix, {
+    limit: 1000,
+    sortBy: { column: 'name', order: 'asc' }
+  })
+
+  if (error) throw new Error(`Не удалось прочитать Storage: ${error.message}`)
+
+  const paths = []
+  for (const item of items || []) {
+    const path = `${prefix}/${item.name}`
+    if (item.id) {
+      paths.push(path)
+    } else {
+      paths.push(...await listRemoteAssetPaths(path))
+    }
+  }
+
+  return paths
+}
+
+async function cleanupUnusedRemoteAssets() {
+  if (!isRemoteTreeActive()) {
+    alert('Очистка Storage нужна только для общего дерева.')
+    return
+  }
+
+  if (!remoteCanEdit || !remoteUser) {
+    alert('Очищать Storage может только редактор общего дерева.')
+    return
+  }
+
+  if (!getRemoteAssetsBucket()) {
+    alert('В supabase-config.js не указан assetsBucket для хранения картинок.')
+    return
+  }
+
+  try {
+    setRemoteStatus('Ищу неиспользуемые картинки...')
+    const [allPaths, referenced] = await Promise.all([
+      listRemoteAssetPaths(),
+      Promise.resolve(collectReferencedRemoteAssetPaths(data))
+    ])
+    const unused = allPaths.filter(path => !referenced.has(path))
+
+    if (unused.length === 0) {
+      updateRemoteControls()
+      alert('Неиспользуемых картинок в Storage не найдено.')
+      return
+    }
+
+    if (!confirm(`Удалить неиспользуемые картинки из Storage? Файлов: ${unused.length}.`)) {
+      updateRemoteControls()
+      return
+    }
+
+    setRemoteStatus('Удаляю неиспользуемые картинки...')
+    const error = await removeRemoteAssetPaths(unused)
+    updateRemoteControls()
+
+    if (error) {
+      alert(error.message || 'Не удалось очистить Storage.')
+      return
+    }
+
+    alert(`Storage очищен. Удалено файлов: ${unused.length}.`)
+  } catch (error) {
+    updateRemoteControls()
+    alert(error.message || 'Не удалось очистить Storage.')
+  }
+}
+
 function countRemoteBase64Images() {
   const portraitCount = data.people.filter(person => isDataImage(person.portrait)).length
   const crestCount = (data.houses || []).filter(house => isDataImage(house.crest)).length
@@ -720,6 +875,7 @@ function updateRemoteControls() {
     setRemoteStatus('Локальное древо')
     if (typeof setTreeReadOnly === 'function') setTreeReadOnly(false)
     if (typeof migrateRemoteImagesBtn !== 'undefined' && migrateRemoteImagesBtn) migrateRemoteImagesBtn.disabled = true
+    if (typeof cleanupRemoteAssetsBtn !== 'undefined' && cleanupRemoteAssetsBtn) cleanupRemoteAssetsBtn.disabled = true
     renderRemotePresenceList()
     return
   }
@@ -735,6 +891,9 @@ function updateRemoteControls() {
   if (typeof setTreeReadOnly === 'function') setTreeReadOnly(!remoteCanEdit)
   if (typeof migrateRemoteImagesBtn !== 'undefined' && migrateRemoteImagesBtn) {
     migrateRemoteImagesBtn.disabled = !remoteCanEdit
+  }
+  if (typeof cleanupRemoteAssetsBtn !== 'undefined' && cleanupRemoteAssetsBtn) {
+    cleanupRemoteAssetsBtn.disabled = !remoteCanEdit
   }
   renderRemotePresenceList()
 }
@@ -921,6 +1080,7 @@ function restoreLocalTree() {
   remoteReloadQueued = false
   remotePersonRepairQueued = false
   remotePersonRepairIds.clear()
+  pendingRemoteAssetDeletePaths.clear()
   remoteDbPresenceAvailable = true
   remotePresenceRows = []
   remoteSnapshot = normalizeData({ people: [], houses: [] })
@@ -1465,6 +1625,7 @@ async function saveRemoteEntities() {
 
   setRemoteSnapshot(currentData)
   persistRemoteTreeMeta(currentData)
+  await processPendingRemoteAssetDeletes(currentData)
   finishRemoteSave()
 }
 
@@ -1516,6 +1677,7 @@ async function saveLegacyRemoteTree() {
   remoteTreeVersion = Number(rows[0].version || nextVersion)
   remoteTreeName = rows[0].name || remoteTreeName
   setRemoteSnapshot()
+  await processPendingRemoteAssetDeletes()
   finishRemoteSave()
 }
 
@@ -1593,6 +1755,7 @@ async function connectRemoteTree(treeId, email, password, asGuest = false, optio
   remoteReloadQueued = false
   remotePersonRepairQueued = false
   remotePersonRepairIds.clear()
+  pendingRemoteAssetDeletePaths.clear()
   remoteSnapshot = normalizeData({ people: [], houses: [] })
   setRemoteTreeUrl(nextTreeId, !!options.replaceUrl)
 
@@ -1707,6 +1870,7 @@ async function initializeRemoteSync() {
       remoteReloadQueued = false
       remotePersonRepairQueued = false
       remotePersonRepairIds.clear()
+      pendingRemoteAssetDeletePaths.clear()
       remoteSnapshot = normalizeData({ people: [], houses: [] })
       setRemoteTreeUrl(initialTreeKey, !!urlTreeKey)
       await openRemoteTreeWithUser(rememberedUser)
